@@ -459,42 +459,50 @@ interface Directory {
 // }
 
 // este funciona perfecto con los cubos, no hace lineas aún
-function createDirectoryView(scene: THREE.Scene, directory: any, subLevel: number, xPosition: number) {
+function createDirectoryView(sceneInit: SceneInit, directory: any, subLevel: number, xPosition: number) {
+  const scene = sceneInit.scene!;
   const geometry = new THREE.BoxGeometry(1, 1, 1);
   const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
   const cube = new THREE.Mesh(geometry, material);
   cube.position.set(xPosition, subLevel, 0);
   scene.add(cube);
+  // Add directory name to the cube
+  const dirTextGeometry = new TextGeometry(directory.name, {
+    font: sceneInit.font!,
+    size: 0.1,
+    height: 0.01,
+  });
+  const dirTextMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+  const dirText = new THREE.Mesh(dirTextGeometry, dirTextMaterial);
+  dirText.position.set(xPosition, subLevel, 0.5);
+  scene.add(dirText);
 
   const points = [];
-  points.push(new THREE.Vector3(xPosition , subLevel, 0)); // start at the left side of the subdirectory cube
-  points.push(new THREE.Vector3(xPosition-2, subLevel, 0)); // go up to the bottom of the parent directory cube
- 
+  points.push(new THREE.Vector3(xPosition, subLevel, 0)); // start at the left side of the subdirectory cube
+  points.push(new THREE.Vector3(xPosition - 2, subLevel, 0)); // go up to the bottom of the parent directory cube
+
   const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
   const line = new THREE.Line(lineGeometry, lineMaterial);
   scene.add(line);
 
-var lastLevel = subLevel; 
+  var lastLevel = subLevel;
   directory.subdirectories.forEach((subdirectory: any, index: any) => {
     const points = [];
-    points.push(new THREE.Vector3(xPosition , subLevel-1, 0)); // go up to the bottom of the parent directory cube
-    points.push(new THREE.Vector3(xPosition , lastLevel, 0)); // go left to the parent directory cube
+    points.push(new THREE.Vector3(xPosition, subLevel - 1, 0)); // go up to the bottom of the parent directory cube
+    points.push(new THREE.Vector3(xPosition, lastLevel, 0)); // go left to the parent directory cube
 
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
     const line = new THREE.Line(lineGeometry, lineMaterial);
     scene.add(line);
-    subLevel = createDirectoryView(scene, subdirectory, subLevel - 1, xPosition + 2);
+    subLevel = createDirectoryView(sceneInit, subdirectory, subLevel - 1, xPosition + 2);
   });
   return subLevel;
 }
 
 function App(): any {
   useEffect(() => {
-    const test = new SceneInit('myThreeJsCanvas');
-    test.initialize();
-    test.animate();
 
     const folders: Directory[] = [{
       name: 'root',
@@ -560,14 +568,20 @@ function App(): any {
           ]
         },
         {
-          name: '1-0-0-1',
+          name: '1-1',
           files: ['1-0-0-1.1',],
           subdirectories: []
         },
 
       ]
     }];
-    createDirectoryView(test.scene!, folders[0], 0, 0);
+
+    const sceneInit = new SceneInit('myThreeJsCanvas');
+    sceneInit.initialize().then(() => {
+      sceneInit.animate();
+      createDirectoryView(sceneInit, folders[0], 0, 0);
+    }
+    );
   }, []);
 
   return (
