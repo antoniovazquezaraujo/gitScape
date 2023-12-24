@@ -1,17 +1,12 @@
 import { useEffect } from 'react';
-// import { FontLoader } from 'three';
+ 
 import * as THREE from 'three';
 
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry';
 
 import SceneInit from './lib/SceneInit';
-
-// Leer la estructura del directorio y sus archivos
-// Esto es solo un ejemplo, necesitarás implementar tu propia lógica para leer la estructura del directorio
-
-
-
+ 
 // Función para crear una superficie para un directorio
 function createDirectorySurface(scene, directory, level) {
   const loader = new FontLoader();
@@ -43,22 +38,21 @@ function createDirectorySurface(scene, directory, level) {
   const plane = new THREE.Mesh(geometry, material);
   plane.position.y = level;
   scene.add(plane);
-// console.log("files:"+ directory.name);
-  // Crear cubos para los archivos
+ 
   directory.files.forEach((file, index) => {
     const fileGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
     const fileMaterial = new THREE.MeshBasicMaterial({color: 0x00ff00});
     const cube = new THREE.Mesh(fileGeometry, fileMaterial);
     cube.position.set(index / 10, level, 0);
     scene.add(cube);
-    //createCubeWithText(scene, index/10, index/10 , file);
+ 
   });
   directory.subdirectories.forEach((subdirectory, index) => {
     createDirectorySurface(scene, subdirectory, index + 1);
   });
 
 
-  // Crear superficies para los subdirectorios
+ 
 }
 
 
