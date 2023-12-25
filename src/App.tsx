@@ -4,14 +4,10 @@ import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import SceneInit from './lib/SceneInit';
 import React from 'react';
 import LogManager from './LogManager'
-import { TreeNodeManager, TreeNode } from './NodeManager'
+import { TreeNodeManager, TreeNode, Directory } from './NodeManager'
 
 
-interface Directory {
-  name: string;
-  files: string[];
-  subdirectories: Directory[];
-}
+
 
 function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLevel: number, xPosition: number) {
   const scene = sceneInit.scene!;
@@ -22,7 +18,7 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
   scene.add(cube);
 
   // Add directory name to the cube
-  const textGeometry = new TextGeometry(directory.name, {
+  const directoryTextGeometry = new TextGeometry(directory.name, {
     font: sceneInit.font!,
     size: 0.1,
     height: 0.01,
@@ -39,25 +35,31 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 })); // red color for edges
     line.position.set(xPosition, subLevel + 0.1, index * 0.2 + 0.2);
     scene.add(line);
+    const fileTextGeometry = new TextGeometry(file, {
+      font: sceneInit.font!,
+      size: 0.1,
+      height: 0.01,
+    });
+  
     // Center the text
-    textGeometry.computeBoundingBox();
-    const textWidth = textGeometry.boundingBox!.max.x - textGeometry.boundingBox!.min.x;
+    fileTextGeometry.computeBoundingBox();
+    const textWidth = fileTextGeometry.boundingBox!.max.x - fileTextGeometry.boundingBox!.min.x;
     const textOffset = -0.5 * textWidth;
 
     const fileTextMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff }); // white color for file names
-    const fileText = new THREE.Mesh(textGeometry, fileTextMaterial);
+    const fileText = new THREE.Mesh(fileTextGeometry, fileTextMaterial);
     fileText.position.set(xPosition + textOffset, subLevel, index * 0.2 + 0.15); // position the text on the front face of the file cube
     fileText.rotateX(Math.PI / 2); // rotate the text 90 degrees around the x-axis
     scene.add(fileText);
   });
 
   // Center the text
-  textGeometry.computeBoundingBox();
-  const textWidth = textGeometry.boundingBox!.max.x - textGeometry.boundingBox!.min.x;
+  directoryTextGeometry.computeBoundingBox();
+  const textWidth = directoryTextGeometry.boundingBox!.max.x - directoryTextGeometry.boundingBox!.min.x;
   const textOffset = -0.5 * textWidth;
 
   const dirTextMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-  const dirText = new THREE.Mesh(textGeometry, dirTextMaterial);
+  const dirText = new THREE.Mesh(directoryTextGeometry, dirTextMaterial);
   dirText.position.set(xPosition, subLevel - 0.2, 0.1); // position the directory text a bit forward in the z direction
   scene.add(dirText);
 
@@ -86,26 +88,28 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
   return subLevel;
 }
 
-function printTree(node: TreeNode, prefix:number): void {
-  
+function printTree(node: TreeNode, prefix: number): void {
+
   prefix++
-  if(!node.isFile){
-    console.log('  '.repeat(prefix)+"["+node.name+"]");
-  }else{
-    console.log('  '.repeat(prefix)+node.name);
+  if (!node.isFile) {
+    console.log('  '.repeat(prefix) + "[" + node.name + "]");
+  } else {
+    console.log('  '.repeat(prefix) + node.name);
   }
   for (const child in node.children) {
-    printTree(node.children[child], prefix );
+    printTree(node.children[child], prefix);
   }
 }
 
 export async function showData() {
   const logManager = new LogManager();
-  
-  logManager.getTreeFromOctokit('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
-    printTree(root, 0);
-  });
- 
+
+  // logManager.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
+  //   printTree(root, 0);
+  // });
+
+
+
   logManager.getCommits().then(commit => {
     commit.data.forEach(element => {
       var commitInfo: string = "\n------------------COMMIT-------------------------\n";
@@ -122,7 +126,7 @@ export async function showData() {
           allFiles?.forEach(file => {
             commitInfo = commitInfo + file.filename + "\n";
           });
-          // console.log("\n" + commitInfo + "\n");
+          console.log("\n" + commitInfo + "\n");
         });
       });
     });
@@ -211,7 +215,18 @@ function App(): any {
     const sceneInit = new SceneInit('myThreeJsCanvas');
     sceneInit.initialize().then(() => {
       sceneInit.animate();
-      createDirectoryView(sceneInit, folders[0], 0, 0);
+
+      const logManager = new LogManager();
+      logManager.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
+
+        var treeNodeManager: TreeNodeManager = new TreeNodeManager();
+        const directory: Directory = treeNodeManager.convertTreeNodeToDirectory(root);
+        createDirectoryView(sceneInit, directory, 0, 0);
+      });
+
+
+
+      // createDirectoryView(sceneInit, folders[0], 0, 0);
     }
     );
   }, []);

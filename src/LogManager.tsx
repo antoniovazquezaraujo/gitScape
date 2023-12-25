@@ -4,23 +4,23 @@ import { Octokit } from '@octokit/rest';
 // const octokit = new Octokit();
 
 const octokit = new Octokit({
-    auth: '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', // Reemplaza esto con tu token de GitHub
+    auth: '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', // Reemplaza esto con tu token de GitHub
 });
 
 const owner = 'antoniovazquezaraujo';
 const repo = 'LeTrain';
 
 export default class LogManager {
-
+ 
     public getCommits() {
         return octokit.repos
             .listCommits({
                 owner,
-                repo,
+                repo 
             });
     }
 
-    public async getTree(ref: string) {
+    public async oldGetTree(ref: string) {
         try {
             const tree = await octokit.git.getTree({
                 owner,
@@ -33,7 +33,7 @@ export default class LogManager {
             console.error(error);
         }
     }
-    public async getTreeFromOctokit(ref: string): Promise<TreeNode> {
+    public async getTree(ref: string): Promise<TreeNode> {
         const root = new TreeNode('/');
         const { data } =  await octokit.git.getTree({
             owner,

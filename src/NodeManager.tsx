@@ -17,6 +17,18 @@ interface LogTree {
     size?: number | undefined;
     url?: string | undefined;
 }
+
+export class Directory {
+    name: string;
+    files: string[];
+    subdirectories: Directory[];
+
+    constructor(name: string, files: string[], subdirectories: Directory[]) {
+        this.name = name;
+        this.files = files;
+        this.subdirectories = subdirectories;
+    }
+}
 export class TreeNodeManager {
     public createTree(elements: LogTree[]): TreeNode {
         const root = new TreeNode('');
@@ -35,5 +47,20 @@ export class TreeNodeManager {
             currentTreeNode = currentTreeNode.children[segment];
         }
         return root;
+    }
+    public convertTreeNodeToDirectory(node: TreeNode): Directory {
+        const files: string[] = [];
+        const subdirectories: Directory[] = [];
+
+        for (let key in node.children) {
+            const childNode = node.children[key];
+            if (childNode.isFile) {
+                files.push(childNode.name);
+            } else {
+                subdirectories.push(this.convertTreeNodeToDirectory(childNode));
+            }
+        }
+
+        return new Directory(node.name, files, subdirectories);
     }
 }
