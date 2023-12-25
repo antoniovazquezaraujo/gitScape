@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import SceneInit from './lib/SceneInit';
 import React from 'react';
+import LogManager from './LogManager'
+import { TreeNodeManager, TreeNode } from './NodeManager'
 
 
 interface Directory {
@@ -31,26 +33,23 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
     const fileMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // red color for files
     const fileCube = new THREE.Mesh(fileGeometry, fileMaterial);
     fileCube.position.set(xPosition, subLevel + 0.1, index * 0.2 + 0.2); // stack the file cubes in the z direction on top of the directory cube
-    scene.add(fileCube); 
+    scene.add(fileCube);
 
     const edges = new THREE.EdgesGeometry(fileGeometry);
     const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 })); // red color for edges
-    line.position.set(xPosition, subLevel+ 0.1, index*0.2+0.2);
+    line.position.set(xPosition, subLevel + 0.1, index * 0.2 + 0.2);
     scene.add(line);
     // Center the text
     textGeometry.computeBoundingBox();
     const textWidth = textGeometry.boundingBox!.max.x - textGeometry.boundingBox!.min.x;
     const textOffset = -0.5 * textWidth;
-    
-    const fileTextMaterial = new THREE.MeshBasicMaterial({color: 0xffffff}); // white color for file names
+
+    const fileTextMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff }); // white color for file names
     const fileText = new THREE.Mesh(textGeometry, fileTextMaterial);
-    fileText.position.set(xPosition + textOffset, subLevel , index * 0.2+ 0.15 ); // position the text on the front face of the file cube
+    fileText.position.set(xPosition + textOffset, subLevel, index * 0.2 + 0.15); // position the text on the front face of the file cube
     fileText.rotateX(Math.PI / 2); // rotate the text 90 degrees around the x-axis
     scene.add(fileText);
   });
-
-
-
 
   // Center the text
   textGeometry.computeBoundingBox();
@@ -59,9 +58,9 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
 
   const dirTextMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
   const dirText = new THREE.Mesh(textGeometry, dirTextMaterial);
-  dirText.position.set(xPosition, subLevel-0.2, 0.1); // position the directory text a bit forward in the z direction
+  dirText.position.set(xPosition, subLevel - 0.2, 0.1); // position the directory text a bit forward in the z direction
   scene.add(dirText);
- 
+
   const points = [];
   points.push(new THREE.Vector3(xPosition, subLevel, 0)); // start at the left side of the subdirectory cube
   points.push(new THREE.Vector3(xPosition - 2, subLevel, 0)); // go up to the bottom of the parent directory cube
@@ -70,9 +69,6 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
   const line = new THREE.Line(lineGeometry, lineMaterial);
   scene.add(line);
-
-
-
 
 
   var lastLevel = subLevel;
@@ -88,6 +84,49 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
     subLevel = createDirectoryView(sceneInit, subdirectory, subLevel - 1, xPosition + 2);
   });
   return subLevel;
+}
+
+function printTree(node: TreeNode, prefix:number): void {
+  
+  prefix++
+  if(!node.isFile){
+    console.log('  '.repeat(prefix)+"["+node.name+"]");
+  }else{
+    console.log('  '.repeat(prefix)+node.name);
+  }
+  for (const child in node.children) {
+    printTree(node.children[child], prefix );
+  }
+}
+
+export async function showData() {
+  const logManager = new LogManager();
+  
+  logManager.getTreeFromOctokit('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
+    printTree(root, 0);
+  });
+ 
+  logManager.getCommits().then(commit => {
+    commit.data.forEach(element => {
+      var commitInfo: string = "\n------------------COMMIT-------------------------\n";
+      commitInfo = commitInfo + "Author: " + element.author?.login + "\n";
+      commitInfo = commitInfo + "\nMessage:" + element.commit.message.split("\n")[0] + "\n";
+      logManager.getCommitPullRequests(element.sha).then(allPullRequests => {
+        commitInfo = commitInfo + "\nPull requests:\n";
+        allPullRequests?.forEach(x => {
+          commitInfo = commitInfo + (x.title + "\n");
+          commitInfo = commitInfo + ("Date: " + x.merged_at + "\n");
+        });
+        logManager.getCommitFiles(element.sha).then(allFiles => {
+          commitInfo = commitInfo + "\nFiles:\n";
+          allFiles?.forEach(file => {
+            commitInfo = commitInfo + file.filename + "\n";
+          });
+          // console.log("\n" + commitInfo + "\n");
+        });
+      });
+    });
+  });
 }
 
 function App(): any {
@@ -138,9 +177,9 @@ function App(): any {
                     {
                       name: '1-0-0-3-0',
                       files: [
-                        'file21',  'file21',  'file21',  'file21',
-                        'file21',  'file21',  'file21',  'file21',
-                        'file21',  'file21',  'file21'
+                        'file21', 'file21', 'file21', 'file21',
+                        'file21', 'file21', 'file21', 'file21',
+                        'file21', 'file21', 'file21'
                       ],
                       subdirectories: []
                     },
@@ -168,7 +207,7 @@ function App(): any {
 
       ]
     }];
-
+    showData();
     const sceneInit = new SceneInit('myThreeJsCanvas');
     sceneInit.initialize().then(() => {
       sceneInit.animate();

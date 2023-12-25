@@ -9,14 +9,21 @@ export class TreeNode {
         this.isFile = false;
     }
 }
-
+interface LogTree {
+    path?: string | undefined;
+    mode?: string | undefined;
+    type?: string | undefined;
+    sha?: string | undefined;
+    size?: number | undefined;
+    url?: string | undefined;
+}
 export class TreeNodeManager {
-    public createTree(elements: any): TreeNode {
+    public createTree(elements: LogTree[]): TreeNode {
         const root = new TreeNode('');
 
         for (const element of elements) {
             let currentTreeNode = root;
-            const segments = element.path.split('/');
+            const segments = element.path!.split('/');
 
             var segment = segments[segments.length - 1];
             if (!currentTreeNode.children[segment]) {
@@ -30,4 +37,3 @@ export class TreeNodeManager {
         return root;
     }
 }
-

@@ -3,8 +3,8 @@ import { Octokit } from '@octokit/rest';
 
 // const octokit = new Octokit();
 
-const octokit  = new Octokit({
-    auth: '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', // Reemplaza esto con tu token de GitHub
+const octokit = new Octokit({
+    auth: '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', // Reemplaza esto con tu token de GitHub
 });
 
 const owner = 'antoniovazquezaraujo';
@@ -20,19 +20,45 @@ export default class LogManager {
             });
     }
 
-    public async getTree(ref: string){
+    public async getTree(ref: string) {
         try {
             const tree = await octokit.git.getTree({
                 owner,
                 repo,
                 tree_sha: ref,
                 recursive: '1',
-              });
-            return tree.data.tree.map(file => file);
+            });
+            return tree.data.tree;
         } catch (error) {
             console.error(error);
         }
     }
+    public async getTreeFromOctokit(ref: string): Promise<TreeNode> {
+        const root = new TreeNode('/');
+        const { data } =  await octokit.git.getTree({
+            owner,
+            repo,
+            tree_sha: ref,
+            recursive: '1',
+        });
+
+        data.tree.forEach((item: any) => {
+            let currentNode = root;
+            const pathParts = item.path.split('/');
+            pathParts.forEach((part: string, index: number) => {
+                if (!currentNode.children[part]) {
+                    currentNode.children[part] = new TreeNode(part);
+                }
+                currentNode = currentNode.children[part];
+                if (index === pathParts.length - 1 && item.type === 'blob') {
+                    currentNode.isFile = true;
+                }
+            });
+        });
+
+        return root;
+    }
+
     public async getCommitFiles(ref: string) {
         try {
             const commit = await octokit.repos.getCommit({
