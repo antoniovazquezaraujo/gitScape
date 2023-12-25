@@ -6,9 +6,6 @@ import React from 'react';
 import LogManager from './LogManager'
 import { TreeNodeManager, TreeNode, Directory } from './NodeManager'
 
-
-
-
 function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLevel: number, xPosition: number) {
   const scene = sceneInit.scene!;
   const geometry = new THREE.BoxGeometry(2, 0.4, 0.2); // make the cube wider and flatter
@@ -40,7 +37,7 @@ function createDirectoryView(sceneInit: SceneInit, directory: Directory, subLeve
       size: 0.1,
       height: 0.01,
     });
-  
+   
     // Center the text
     fileTextGeometry.computeBoundingBox();
     const textWidth = fileTextGeometry.boundingBox!.max.x - fileTextGeometry.boundingBox!.min.x;
@@ -104,12 +101,6 @@ function printTree(node: TreeNode, prefix: number): void {
 export async function showData() {
   const logManager = new LogManager();
 
-  // logManager.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
-  //   printTree(root, 0);
-  // });
-
-
-
   logManager.getCommits().then(commit => {
     commit.data.forEach(element => {
       var commitInfo: string = "\n------------------COMMIT-------------------------\n";
@@ -135,82 +126,6 @@ export async function showData() {
 
 function App(): any {
   useEffect(() => {
-
-    const folders: Directory[] = [{
-      name: 'root',
-      files: ['file1', 'file2'],
-      subdirectories: [
-        {
-          name: '1-0',
-          files: ['1-0.1', '1-0.2'],
-          subdirectories: [
-            {
-              name: '1-0-0',
-              files: ['1-0-0.1', '1-0-0.2'],
-              subdirectories: [
-                {
-                  name: '1-0-0-0',
-                  files: ['1-0-0-0.1',],
-                  subdirectories: []
-                },
-                {
-                  name: '1-0-0-1',
-                  files: ['file8',],
-                  subdirectories: [
-                    {
-                      name: '1-0-0-0-1-0',
-                      files: ['file11',],
-                      subdirectories: []
-                    },
-                    {
-                      name: '1-0-0-0-1-1',
-                      files: ['file161',],
-                      subdirectories: []
-                    }
-                  ]
-                },
-                {
-                  name: '1-0-0-2',
-                  files: ['file9',],
-                  subdirectories: []
-                },
-                {
-                  name: '1-0-0-3',
-                  files: ['file10',],
-                  subdirectories: [
-                    {
-                      name: '1-0-0-3-0',
-                      files: [
-                        'file21', 'file21', 'file21', 'file21',
-                        'file21', 'file21', 'file21', 'file21',
-                        'file21', 'file21', 'file21'
-                      ],
-                      subdirectories: []
-                    },
-                    {
-                      name: '1-0-0-3-1',
-                      files: ['file31',],
-                      subdirectories: []
-                    },
-                    {
-                      name: '1-0-0-3-2',
-                      files: ['file41',],
-                      subdirectories: []
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        },
-        {
-          name: '1-1',
-          files: ['1-0-0-1.1',],
-          subdirectories: []
-        },
-
-      ]
-    }];
     showData();
     const sceneInit = new SceneInit('myThreeJsCanvas');
     sceneInit.initialize().then(() => {
@@ -223,10 +138,6 @@ function App(): any {
         const directory: Directory = treeNodeManager.convertTreeNodeToDirectory(root);
         createDirectoryView(sceneInit, directory, 0, 0);
       });
-
-
-
-      // createDirectoryView(sceneInit, folders[0], 0, 0);
     }
     );
   }, []);
