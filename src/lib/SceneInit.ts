@@ -16,7 +16,7 @@ export default class SceneInit {
   public scene: THREE.Scene | undefined;
   public camera: THREE.PerspectiveCamera | undefined;
   public renderer: THREE.WebGLRenderer | undefined;
-  public font: Font | undefined;
+  public font:   Font | undefined;
   constructor(canvasId: string) {
     this.fov = 45;
     this.nearPlane = 1;
@@ -32,8 +32,8 @@ export default class SceneInit {
       this.nearPlane,
       this.farPlane
     );
-    this.camera.position.z = 120;
-    const loader = new FontLoader();
+    this.camera.position.z = 10;
+    const loader = new   FontLoader();
     try {
       this.font = await new Promise((resolve, reject) => {
         loader.load(
