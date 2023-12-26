@@ -37,7 +37,7 @@ export default class SceneInit {
     try {
       this.font = await new Promise((resolve, reject) => {
         loader.load(
-          'node_modules/three/examples/fonts/droid/droid_serif_regular.typeface.json',
+          'node_modules/three/examples/fonts/droid/droid_sans_regular.typeface.json',
           resolve,
           undefined,
           reject
