@@ -1,6 +1,7 @@
 {
     "compilerOptions": {
-      "target": "es5",
+      "target": "es2020",
+      "module": "esnext",
       "lib": ["dom", "dom.iterable", "esnext"],
       "allowJs": true,
       "skipLibCheck": true,
@@ -8,12 +9,19 @@
       "allowSyntheticDefaultImports": true,
       "strict": true,
       "forceConsistentCasingInFileNames": true,
-      "module": "esnext",
       "moduleResolution": "node",
       "resolveJsonModule": true,
       "isolatedModules": true,
       "noEmit": true,
-      "jsx": "react"
+      "jsx": "react",
+      "outDir": "./dist",
+      "rootDir": "./src"
     },
-    "include": ["src"]
+    "include": [
+      "src/**/*.tsx",
+      "node_modules/troika-three-text"
+    ],
+    "exclude": [
+      "node_modules"
+    ]
   }

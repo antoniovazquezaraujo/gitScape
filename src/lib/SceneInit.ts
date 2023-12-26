@@ -15,7 +15,6 @@ export default class SceneInit {
   public scene: THREE.Scene | undefined;
   public camera: THREE.PerspectiveCamera | undefined;
   public renderer: THREE.WebGLRenderer | undefined;
-
   constructor(canvasId: string) {
     this.fov = 45;
     this.nearPlane = 1;
@@ -23,7 +22,7 @@ export default class SceneInit {
     this.canvasId = canvasId;
   }
 
-  initialize(): void {
+  async initialize(): Promise<void> {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
       this.fov,
@@ -31,7 +30,7 @@ export default class SceneInit {
       this.nearPlane,
       this.farPlane
     );
-    this.camera.position.z = 120;
+    this.camera.position.z = 10;
 
     const canvas = document.getElementById(this.canvasId);
     if (canvas instanceof HTMLCanvasElement) {

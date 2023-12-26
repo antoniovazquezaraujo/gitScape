@@ -1,171 +1,66 @@
-import { useEffect } from 'react';
-import * as THREE from 'three';
-import { FontLoader } from 'three/examples/jsm/loaders/FontLoader';
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry';
+import React, { useEffect } from 'react';
+import { FolderViewer } from './FolderViewer';
+import LogManager from './LogManager';
+import { Directory, TreeNode, TreeNodeManager } from './NodeManager';
 import SceneInit from './lib/SceneInit';
-import React from 'react';
 
-interface Directory {
-  name: string;
-  files: string[];
-  subdirectories: Directory[];
+
+function printTree(node: TreeNode, prefix: number): void {
+
+  prefix++
+  if (!node.isFile) {
+    console.log('  '.repeat(prefix) + "[" + node.name + "]");
+  } else {
+    console.log('  '.repeat(prefix) + node.name);
+  }
+  for (const child in node.children) {
+    printTree(node.children[child], prefix);
+  }
 }
 
-// function createDirectorySurface(scene: THREE.Scene, directory: Directory, level: number): void {
-//   const loader = new FontLoader();
-//   loader.load(
-//     'node_modules/three/examples/fonts/droid/droid_serif_regular.typeface.json',
-//     (font) => {
-//       directory.files.forEach((file, index) => {
-//         const fileGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-//         const fileMaterial = new THREE.MeshBasicMaterial({color: 0x00ff00});
-//         const cube = new THREE.Mesh(fileGeometry, fileMaterial);
-//         cube.position.set(index / 10, level, 0);
-//         scene.add(cube);
+export async function showData() {
+  const logManager = new LogManager();
 
-//         const textGeometry = new TextGeometry(file, {
-//           font: font,
-//           size: 0.1,
-//           height: 0.01,
-//         });
-//         const textMaterial = new THREE.MeshBasicMaterial({color: 0xffffff});
-//         const text = new THREE.Mesh(textGeometry, textMaterial);
-//         text.position.set(index / 10, level, 0.2);
-//         scene.add(text);
-//       });
-
-//       const geometry = new THREE.PlaneGeometry(1, 1);
-//       const material = new THREE.MeshBasicMaterial({ color: 0xffff00, side: THREE.DoubleSide });
-//       const plane = new THREE.Mesh(geometry, material);
-//       plane.position.y = level;
-//       scene.add(plane);
-
-//       directory.subdirectories.forEach((subdirectory, index) => {
-//         createDirectorySurface(scene, subdirectory, index + 1);
-//       });
-//     }
-//   );
-// }
-function createDirectoryView(scene: THREE.Scene, directory: Directory, level: number, xPosition:number): void {
-  const loader = new FontLoader();
-  loader.load(
-    'node_modules/three/examples/fonts/droid/droid_serif_regular.typeface.json',
-    (font) => {
-      // Create a cube for the directory
-      const dirGeometry = new THREE.BoxGeometry(1, 1, 1);
-      const dirMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
-      const dirCube = new THREE.Mesh(dirGeometry, dirMaterial);
-      dirCube.position.set(xPosition, 0,level*1.4);
-      scene.add(dirCube);
-
-      // Create a cube for each file in the directory
-      var verticalPosition = 1;
-      directory.files.forEach((file, index) => {
-        const fileGeometry = new THREE.BoxGeometry(1, 0.5, 0.1);
-        const fileMaterial = new THREE.MeshBasicMaterial({color: 0x00ff00});
-        const fileCube = new THREE.Mesh(fileGeometry, fileMaterial);
-        fileCube.position.set(xPosition + index / 10, verticalPosition, level*1.4);
-        scene.add(fileCube);
-
-        const textGeometry = new TextGeometry(file, {
-          font: font,
-          size: 0.1,
-          height: 0.01,
+  logManager.getCommits().then(commit => {
+    commit.data.forEach(element => {
+      var commitInfo: string = "\n------------------COMMIT-------------------------\n";
+      commitInfo = commitInfo + "Author: " + element.author?.login + "\n";
+      commitInfo = commitInfo + "\nMessage:" + element.commit.message.split("\n")[0] + "\n";
+      logManager.getCommitPullRequests(element.sha).then(allPullRequests => {
+        commitInfo = commitInfo + "\nPull requests:\n";
+        allPullRequests?.forEach(x => {
+          commitInfo = commitInfo + (x.title + "\n");
+          commitInfo = commitInfo + ("Date: " + x.merged_at + "\n");
         });
-        const textMaterial = new THREE.MeshBasicMaterial({color: 0xff00ff});
-        const text = new THREE.Mesh(textGeometry, textMaterial);
-        text.position.set(xPosition+ index/10 , verticalPosition, level*1.4+0.2);
-        scene.add(text);
-        verticalPosition += 0.5;
+        logManager.getCommitFiles(element.sha).then(allFiles => {
+          commitInfo = commitInfo + "\nFiles:\n";
+          allFiles?.forEach(file => {
+            commitInfo = commitInfo + file.filename + "\n";
+          });
+          console.log("\n" + commitInfo + "\n");
+        });
       });
+    });
+  });
+}
 
-      // Create a line to each subdirectory
-      var directoryPosition = xPosition ;
-      directory.subdirectories.forEach((subdirectory, index) => {
-        const lineMaterial = new THREE.LineBasicMaterial({color: 0xffffff});
-        const points = [];
-        points.push(
-          new THREE.Vector3(0, level, 1), // start at the back of the directory cube
-          new THREE.Vector3(index * 2, level + 1, -1) // end at the front of the subdirectory cube
-        );
+function App(): any {
+  useEffect(() => {
+    showData();
+    const sceneInit = new SceneInit('myThreeJsCanvas');
+    sceneInit.initialize().then(() => {
+      sceneInit.animate();
 
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(lineGeometry, lineMaterial);
-        // scene.add(line);
-        createDirectoryView(scene, subdirectory, level - 1, directoryPosition);
-        directoryPosition += 2;
+      const logManager = new LogManager();
+      logManager.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
+
+        var treeNodeManager: TreeNodeManager = new TreeNodeManager();
+        const directory: Directory = treeNodeManager.convertTreeNodeToDirectory(root);
+        const folderViewer:FolderViewer = new FolderViewer();
+        folderViewer.createDirectoryView(sceneInit, directory, 0, 0);
       });
     }
-  );
-}
-
-function App() :any{
-  useEffect(() => {
-    const test = new SceneInit('myThreeJsCanvas');
-    test.initialize();
-    test.animate();
-
-    const folders: Directory[] = [{
-      name: 'root',
-      files: ['file1', 'file2'],
-      subdirectories: [
-        {
-          name: 'sub1',
-          files: ['file3', 'file4'],
-          subdirectories: [
-            {
-              name: 'sub2',
-              files: ['file5', 'file6'],
-              subdirectories: [
-                {
-                  name: 'sub3',
-                  files: ['file7',],
-                  subdirectories: []
-                },
-                {
-                  name: 'sub4',
-                  files: ['file8',],
-                  subdirectories: [
-                    {
-                      name: 'sub7',
-                      files: ['file11',],
-                      subdirectories: []
-                    }
-                  ]
-                },
-                {
-                  name: 'sub5',
-                  files: ['file9',],
-                  subdirectories: []
-                },
-                {
-                  name: 'sub6',
-                  files: ['file10',],
-                  subdirectories: [
-                    {
-                      name: 'sub17',
-                      files: ['file21',],
-                      subdirectories: []
-                    },
-                    {
-                      name: 'sub27',
-                      files: ['file31',],
-                      subdirectories: []
-                    },
-                    {
-                      name: 'sub37',
-                      files: ['file41',],
-                      subdirectories: []
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }];
-    createDirectoryView(test.scene!, folders[0], 0, 0);
+    );
   }, []);
 
   return (
