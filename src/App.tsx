@@ -35,7 +35,7 @@ export async function showData() {
         logManager.getCommitFiles(element.sha).then(allFiles => {
           commitInfo = commitInfo + "\nFiles:\n";
           allFiles?.forEach(file => {
-            commitInfo = commitInfo + file.filename + "\n";
+            commitInfo = commitInfo + file.filename + "(["+ file.status +"] +:"+ file.additions + " -:"+ file.deletions + " x:"+ file.changes + ")"+ "\n";
           });
           console.log("\n" + commitInfo + "\n");
         });
