@@ -18,7 +18,8 @@
       "rootDir": "./src"
     },
     "include": [
-      "src/**/*.tsx"
+      "src/**/*.tsx",
+      "node_modules/troika-three-text"
     ],
     "exclude": [
       "node_modules"

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import { Directory } from './NodeManager';
 import SceneInit from './lib/SceneInit';
+import {Text} from 'troika-three-text';
+
 
 export class FolderViewer{
     private readonly directoryColor = 0x999999;
@@ -29,21 +30,14 @@ export class FolderViewer{
         scene.add(cube);
       
         // Directory name
-        const directoryTextGeometry = new TextGeometry(directory.name, {
-          font: sceneInit.font!,
-          size: 0.1,
-          height: 0.01,
-        });
-      
-      
-        // Center directory text
-        directoryTextGeometry.computeBoundingBox();
-        const textWidth = directoryTextGeometry.boundingBox!.max.x - directoryTextGeometry.boundingBox!.min.x;
-        const textOffset = -0.5 * textWidth;    
-        const dirTextMaterial = new THREE.MeshBasicMaterial({ color: this.folderTextColor });
-        const dirText = new THREE.Mesh(directoryTextGeometry, dirTextMaterial);
-        dirText.position.set(xPosition, subLevel - 0.1, 0.02); 
+        const dirText = new Text();
+        dirText.text = directory.name;
+        dirText.fontSize = 0.1;
+        dirText.color = this.folderTextColor;
+        dirText.anchorX = 'center';
+        dirText.position.set(xPosition, subLevel , 0.03); 
         scene.add(dirText);
+        dirText.sync();
       
         // Line up to the parent directory
         const points = [];
@@ -56,7 +50,6 @@ export class FolderViewer{
       
         // Files of this directory
         directory.files.forEach((file: any, index: any) => {
-
 
             // The file cube
             const fileGeometry = new THREE.BoxGeometry(3, 0.01, 0.2); 
@@ -77,20 +70,15 @@ export class FolderViewer{
 
 
             // The file name text
-            const fileTextGeometry = new TextGeometry(file, {
-              font: sceneInit.font!,
-              size: 0.1,
-              height: 0.01,
-            });          
-            // Center the text
-            fileTextGeometry.computeBoundingBox();
-            const textWidth = fileTextGeometry.boundingBox!.max.x - fileTextGeometry.boundingBox!.min.x;
-            const textOffset = -0.5 * textWidth;
-            const fileTextMaterial = new THREE.MeshBasicMaterial({ color: this.fileTextColor }); 
-            const fileText = new THREE.Mesh(fileTextGeometry, fileTextMaterial);
-            fileText.position.set(xPosition + textOffset, subLevel+0.1, index * 0.2 + 0.1); 
-            fileText.rotateX(Math.PI / 2); 
+            const fileText = new Text();
+            fileText.text = file;
+            fileText.fontSize = 0.1;
+            fileText.color = this.fileTextColor;
+            fileText.anchorX = 'center';
+            fileText.position.set(xPosition, subLevel+0.09 , index * 0.2 + 0.2); 
+            fileText.rotation.x = Math.PI / 2;
             scene.add(fileText);
+            fileText.sync();
           });
         
 

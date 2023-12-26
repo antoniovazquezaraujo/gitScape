@@ -4,7 +4,7 @@ import { Octokit } from '@octokit/rest';
 // const octokit = new Octokit();
 
 const octokit = new Octokit({
-    auth: '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', // Reemplaza esto con tu token de GitHub
+    auth: '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', // Reemplaza esto con tu token de GitHub
 });
 
 const owner = 'antoniovazquezaraujo';

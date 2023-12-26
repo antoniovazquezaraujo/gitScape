@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import Stats from 'three/examples/jsm/libs/stats.module';
-import { Font, FontLoader } from 'three/examples/jsm/loaders/FontLoader';
 
 export default class SceneInit {
   private fov: number;
@@ -16,7 +15,6 @@ export default class SceneInit {
   public scene: THREE.Scene | undefined;
   public camera: THREE.PerspectiveCamera | undefined;
   public renderer: THREE.WebGLRenderer | undefined;
-  public font:   Font | undefined;
   constructor(canvasId: string) {
     this.fov = 45;
     this.nearPlane = 1;
@@ -33,19 +31,7 @@ export default class SceneInit {
       this.farPlane
     );
     this.camera.position.z = 10;
-    const loader = new   FontLoader();
-    try {
-      this.font = await new Promise((resolve, reject) => {
-        loader.load(
-          'node_modules/three/examples/fonts/droid/droid_sans_regular.typeface.json',
-          resolve,
-          undefined,
-          reject
-        );
-      });
-    } catch (error) {
-      console.error('Error loading font:', error);
-    }
+
     const canvas = document.getElementById(this.canvasId);
     if (canvas instanceof HTMLCanvasElement) {
       this.renderer = new THREE.WebGLRenderer({
