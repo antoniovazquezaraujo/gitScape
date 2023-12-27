@@ -84,7 +84,8 @@ export class FolderViewer{
 
           // The subdirectories of this directory
         var lastLevel = subLevel;
-        directory.subdirectories.forEach((subdirectory: any, index: any) => {
+        for (let key in directory.subdirectories) {
+          let subdirectory = directory.subdirectories[key];        
 
           // Line left   
           const points = [];
@@ -97,7 +98,7 @@ export class FolderViewer{
 
           // Render the subdirectory
           subLevel = this.createDirectoryView(sceneInit, subdirectory, subLevel - 1, xPosition + 2);
-        });
+        };
         return subLevel;
       }
 }
