@@ -21,7 +21,7 @@ export default class LogManager {
     } 
 
     public async getTree(ref: string): Promise<TreeNode> {
-        const root = new TreeNode('/');
+        const root = new TreeNode('');
         const { data } =  await octokit.git.getTree({
             owner,
             repo,

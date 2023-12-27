@@ -18,6 +18,8 @@ export class FolderViewer{
     private readonly horizontalLineColor = 0x999999;
 
     private readonly verticalLineColor = 0x999999;
+    
+    positions:{[path:string]:THREE.Vector3}={};
 
     public createDirectoryView(sceneInit: SceneInit, directory: Directory, subLevel: number, xPosition: number) {
         const scene = sceneInit.scene!;
@@ -28,6 +30,8 @@ export class FolderViewer{
         const cube = new THREE.Mesh(geometry, material);
         cube.position.set(xPosition, subLevel, 0);
         scene.add(cube);
+        let path = directory.getPath();
+        this.positions[path] = cube.position;
       
         // Directory name
         const dirText = new Text();
@@ -61,7 +65,9 @@ export class FolderViewer{
             const fileCube = new THREE.Mesh(fileGeometry, fileMaterial);
             fileCube.position.set(xPosition, subLevel + 0.1, index * 0.2 + 0.1); 
             scene.add(fileCube);
-        
+            let path = directory.getPath()+ "/"+ file;
+            this.positions[path] = fileCube.position;
+            
             // The border of the file cube
             const edges = new THREE.EdgesGeometry(fileGeometry);
             const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: this.fileBorderColor })); 

@@ -40,39 +40,6 @@ export class Directory {
     }
 }
 export class TreeNodeManager {
-    // public createTree(elements: LogTree[]): TreeNode {
-    //     const root = new TreeNode('');
-
-    //     for (const element of elements) {
-    //         let currentTreeNode = root;
-    //         const segments = element.path!.split('/');
-
-    //         var segment = segments[segments.length - 1];
-    //         if (!currentTreeNode.children[segment]) {
-    //             currentTreeNode.children[segment] = new TreeNode(segment);
-    //             if (element.type == "blob") {
-    //                 currentTreeNode.children[segment].isFile = true;
-    //             }
-    //         }
-    //         currentTreeNode = currentTreeNode.children[segment];
-    //     }
-    //     return root;
-    // }
-    // public convertTreeNodeToDirectory(node: TreeNode): Directory {
-    //     const files: string[] = [];
-    //     const subdirectories: Directory[] = [];
-
-    //     for (let key in node.children) {
-    //         const childNode = node.children[key];
-    //         if (childNode.isFile) {
-    //             files.push(childNode.name);
-    //         } else {
-    //             subdirectories.push(this.convertTreeNodeToDirectory(childNode));
-    //         }
-    //     }
-
-    //     return new Directory(node.name, files, subdirectories);
-    // }
     public convertTreeNodeToDirectory(node: TreeNode, parent: Directory | null = null): Directory {
         const directory = new Directory(node.name, parent);
     
