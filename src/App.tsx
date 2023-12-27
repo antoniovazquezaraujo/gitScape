@@ -58,6 +58,7 @@ function App(): any {
         const directory: Directory = treeNodeManager.convertTreeNodeToDirectory(root);
         const folderViewer:FolderViewer = new FolderViewer();
         folderViewer.createDirectoryView(sceneInit, directory, 0, 0);
+        console.log(folderViewer.positions);
       });
     }
     );

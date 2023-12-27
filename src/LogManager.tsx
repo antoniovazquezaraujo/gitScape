@@ -1,10 +1,10 @@
 import { TreeNodeManager, TreeNode } from './NodeManager'
 import { Octokit } from '@octokit/rest';
 
-// const octokit = new Octokit();
+const githubToken = import.meta.env.VITE_GITHUB_TOKEN;
 
 const octokit = new Octokit({
-    auth: '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', // Reemplaza esto con tu token de GitHub
+    auth: githubToken, 
 });
 
 const owner = 'antoniovazquezaraujo';
@@ -21,7 +21,7 @@ export default class LogManager {
     } 
 
     public async getTree(ref: string): Promise<TreeNode> {
-        const root = new TreeNode('/');
+        const root = new TreeNode('');
         const { data } =  await octokit.git.getTree({
             owner,
             repo,
