@@ -175,7 +175,7 @@ export default class GitView {
     if (this.renderer && this.camera) { //&& this.stats && this.controls) {
       window.requestAnimationFrame(() => this.animate());
       this.renderer.render(this.scene!, this.camera);
-      this.controls.update();
+      this.controls!.update();
     }
   }
 
