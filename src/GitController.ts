@@ -12,6 +12,12 @@ export class GitController {
     this.view = view;
     this.view.initialize();
 
+    this.model.getFirstAndLastCommit().then(({ firstCommit, lastCommit }) => {
+      console.log("primero:" + firstCommit + " último:" + lastCommit);
+    });
+
+
+
     this.model.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
       this.directory = model.getDirectory(root);
       this.view.createDirectoryView(this.directory, 0, 0);
@@ -29,12 +35,4 @@ export class GitController {
     });
     this.view.animate();
   }
-
-  // private animate() {
-  //   requestAnimationFrame(() => this.animate());
-
-  //   // Actualizar el modelo
-  //   // Renderizar la vista
-  //   this.view.animate();
-  // }
 }
