@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { Text } from 'troika-three-text';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+
 import GitModel from './GitModel';
-import { Directory } from './GitModel';
-export default class GitView {
+import { Directory } from './GitScapeModel';
+export default class GitScapeView {
   private fov: number;
   private nearPlane: number;
   private farPlane: number;
@@ -193,28 +194,5 @@ export default class GitView {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
   }
-  public async showCommitEffects() {
-    this.model.getCommits().then(commit => {
-      commit.data.forEach(element => {
-        this.model.getCommitFiles(element.sha).then(allFiles => {
-          allFiles?.forEach(file => {
-            const mesh = this.elements[file.filename];
-            if (mesh != undefined) {
-              setInterval(() => {
-                (mesh.material as THREE.MeshBasicMaterial).color.set(this.getRandomColor());
-              }, 1000);
-            } else {
-              // file from commit is not in the structure!
-            }
-          });
-        });
-      });
-    });
-  }
-  public getRandomColor() {
-    const r = Math.floor(Math.random() * 256);
-    const g = Math.floor(Math.random() * 256);
-    const b = Math.floor(Math.random() * 256);
-    return `rgb(${r},${g},${b})`;
-  }
+  
 }
