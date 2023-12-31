@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import  {Text}  from 'troika-three-text';
+import { Text } from 'troika-three-text';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import GitModel from './GitModel';
@@ -77,13 +77,19 @@ export default class GitView {
       this.directionalLight = new THREE.DirectionalLight(0x00ffff, 1);
       this.directionalLight.position.set(0, 5, 5);
       this.scene.add(this.directionalLight);
-
       window.addEventListener('resize', () => this.onWindowResize(), false);
     }
   }
 
+  public async clearScene() {
+    for (let i = this.scene!.children.length - 1; i >= 0; i--) {
+      const object = this.scene!.children[i];
+      if (!(object instanceof THREE.Camera) && !(object instanceof THREE.Light)) {
+        this.scene!.remove(object);
+      }
+    }
+  }
   public createDirectoryView(directory: Directory, subLevel: number, xPosition: number) {
-
     // Directory cube
     const geometry = new THREE.BoxGeometry(3, 0.4, 0.05);
     const material = new THREE.MeshLambertMaterial({ color: this.directoryColor });
@@ -206,9 +212,9 @@ export default class GitView {
     });
   }
   public getRandomColor() {
-    const r = Math.floor(Math.random() * 256); 
-    const g = Math.floor(Math.random() * 256);  
-    const b = Math.floor(Math.random() * 256);  
-    return `rgb(${r},${g},${b})`;  
+    const r = Math.floor(Math.random() * 256);
+    const g = Math.floor(Math.random() * 256);
+    const b = Math.floor(Math.random() * 256);
+    return `rgb(${r},${g},${b})`;
   }
 }
