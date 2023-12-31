@@ -195,21 +195,23 @@ export default class GitScapeView {
     }
   }
 
-  public createSliderDateEventsListener(){
+  public createSliderDateEventsListener() {
     const slider = document.getElementById('slider') as HTMLInputElement;
     slider.max = (this.gitModel.allCommits.length - 1).toString();
-    slider.addEventListener('input', (event) => {
+    slider.addEventListener('input', async (event) => {
       const slider = event.target as HTMLInputElement;
       const commitIndex = parseInt(slider.value, 10);
-      
+
       const commit = this.gitModel.allCommits[commitIndex];
-      
+
       if (commit) {
         const datetime = new Date(commit.commit.author.date);
         (document.getElementById('datetime') as HTMLInputElement).value = datetime.toLocaleString();
-        
-        // Aquí puedes agregar el código para mostrar el commit en la escena
-        // ...
+
+        const root = await this.gitModel.getTree(commit.sha);
+        const directory = this.gitModel.getDirectory(root);
+        this.clearScene();
+        this.createDirectoryView(directory, 0, 0);
       }
     });
   }

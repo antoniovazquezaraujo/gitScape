@@ -24,6 +24,7 @@ export class GitScapeController {
 
     this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
       this.directory = this.gitModel.getDirectory(root);
+      
       this.gitScapeView.createDirectoryView(this.directory, 0, 0);
     });
 
