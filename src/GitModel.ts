@@ -7,6 +7,8 @@ export default class GitModel {
   owner: string;
   repo: string;
 
+  allCommits: any[] = [];
+
   public constructor() {
     this.githubToken = import.meta.env.VITE_GITHUB_TOKEN;
 
@@ -16,44 +18,76 @@ export default class GitModel {
     this.owner = 'antoniovazquezaraujo';
     this.repo = 'LeTrain';
   }
-
-  public getCommits() {
-    return this.octokit.repos
-      .listCommits({
-        owner: this.owner,
-        repo: this.repo
-      });
+  public async initialize(){
+    return this.reloadAllCommits();
   }
-  async getFirstAndLastCommit(): Promise<{ firstCommit: any; lastCommit: any }> {
+  
+  async reloadAllCommits(): Promise<any[]> {
     const perPage = 100; // Máximo permitido por la API de GitHub
-
-    // Obtener el último commit (el más reciente)
-    let { data: commits } = await this.octokit.repos.listCommits({
-      owner: this.owner,
-      repo: this.repo,
-      per_page: perPage,
-    });
-    const lastCommit = commits[0];
-
-    // Obtener el número total de commits
-    const { data: { total_count: totalCount } } = await this.octokit.search.commits({
-      q: `* repo:${this.owner}/${this.repo}`,
-    });
-
-    // Calcular cuántas páginas de resultados hay
-    const pages = Math.ceil(totalCount / perPage);
-
-    // Obtener el primer commit (el más antiguo)
-    commits = (await this.octokit.repos.listCommits({
-      owner: this.owner,
-      repo: this.repo,
-      per_page: perPage,
-      page: pages,
-    })).data;
-    const firstCommit = commits[commits.length - 1];
-
-    return { firstCommit, lastCommit };
+    let page = 1;
+    this.allCommits = [];
+  
+    while (true) {
+      const { data: commits } = await this.octokit.repos.listCommits({
+        owner: this.owner,
+        repo: this.repo,
+        per_page: perPage,
+        page: page,
+      });
+  
+      this.allCommits = this.allCommits.concat(commits); 
+      if (commits.length < perPage) {
+        break;
+      }
+      page++;
+    }
+    return this.allCommits;
   }
+
+  public async getCommits() {
+    if(this.allCommits == undefined) {
+      await this.reloadAllCommits();
+    }
+    return this.allCommits;
+  }
+
+  getFirstCommit(): any {
+    return this.allCommits[this.allCommits.length - 1];
+  }
+  getLastCommit(): any {
+    return this.allCommits[0];
+  }
+
+  // async getFirstAndLastCommit(): Promise<{ firstCommit: any; lastCommit: any }> {
+  //   const perPage = 100; // Máximo permitido por la API de GitHub
+
+  //   // Obtener el último commit (el más reciente)
+  //   let { data: commits } = await this.octokit.repos.listCommits({
+  //     owner: this.owner,
+  //     repo: this.repo,
+  //     per_page: perPage,
+  //   });
+  //   const lastCommit = commits[0];
+
+  //   // Obtener el número total de commits
+  //   const { data: { total_count: totalCount } } = await this.octokit.search.commits({
+  //     q: `* repo:${this.owner}/${this.repo}`,
+  //   });
+
+  //   // Calcular cuántas páginas de resultados hay
+  //   const pages = Math.ceil(totalCount / perPage);
+
+  //   // Obtener el primer commit (el más antiguo)
+  //   commits = (await this.octokit.repos.listCommits({
+  //     owner: this.owner,
+  //     repo: this.repo,
+  //     per_page: perPage,
+  //     page: pages,
+  //   })).data;
+  //   const firstCommit = commits[commits.length - 1];
+
+  //   return { firstCommit, lastCommit };
+  // }
 
   public getDirectory(treeNode: TreeNode): Directory {
     return this.createDirectory(treeNode, null);

@@ -16,8 +16,10 @@ export class GitScapeController {
     this.gitScapeView = view;
     this.gitScapeView.initialize();
 
-    this.gitModel.getFirstAndLastCommit().then(({ firstCommit, lastCommit }) => {
-      console.log("first commit:" + firstCommit + "\n last commit:" + lastCommit);
+    this.gitModel.initialize().then(() => {
+      console.log("first commit:" + this.gitModel.getFirstCommit().commit.author.date);
+      console.log("last commit:" + this.gitModel.getLastCommit().commit.author.date);
+      this.gitScapeView.createSliderDateEventsListener();
     });
 
     this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {

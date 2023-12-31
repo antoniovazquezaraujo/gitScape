@@ -20,7 +20,7 @@ export default class GitScapeView {
   public renderer: THREE.WebGLRenderer | undefined;
   pointLight = new THREE.PointLight(0x00ff00, 1, 10);
   intensity = 1;
-  model: GitModel;
+  gitModel: GitModel;
   private readonly directoryColor = 0x999999;
 
 
@@ -42,7 +42,7 @@ export default class GitScapeView {
     this.nearPlane = 1;
     this.farPlane = 1000;
     this.canvasId = canvasId;
-    this.model = model;
+    this.gitModel = model;
     this.initialize();
   }
 
@@ -194,5 +194,23 @@ export default class GitScapeView {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
   }
-  
+
+  public createSliderDateEventsListener(){
+    const slider = document.getElementById('slider') as HTMLInputElement;
+    slider.max = (this.gitModel.allCommits.length - 1).toString();
+    slider.addEventListener('input', (event) => {
+      const slider = event.target as HTMLInputElement;
+      const commitIndex = parseInt(slider.value, 10);
+      
+      const commit = this.gitModel.allCommits[commitIndex];
+      
+      if (commit) {
+        const datetime = new Date(commit.commit.author.date);
+        (document.getElementById('datetime') as HTMLInputElement).value = datetime.toLocaleString();
+        
+        // Aquí puedes agregar el código para mostrar el commit en la escena
+        // ...
+      }
+    });
+  }
 }
