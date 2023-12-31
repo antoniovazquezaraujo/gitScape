@@ -1,15 +1,5 @@
 import { Octokit } from '@octokit/rest';
 
-
-const githubToken = import.meta.env.VITE_GITHUB_TOKEN;
-
-const octokit = new Octokit({
-  auth: githubToken,
-});
-
-const owner = 'antoniovazquezaraujo';
-const repo = 'LeTrain';
-
 export class TreeNode {
   name: string;
   children: { [key: string]: TreeNode };
@@ -21,7 +11,6 @@ export class TreeNode {
     this.isFile = isFile;
   }
 }
-
 
 export class Directory {
   name: string;
@@ -46,13 +35,57 @@ export class Directory {
 }
 
 export default class GitModel {
+  githubToken: string;
+  octokit: Octokit;
+  owner: string;
+  repo: string;
+
+  public constructor() {
+    this.githubToken = import.meta.env.VITE_GITHUB_TOKEN;
+
+    this.octokit = new Octokit({
+      auth: this.githubToken,
+    });
+    this.owner = 'antoniovazquezaraujo';
+    this.repo = 'LeTrain';
+  }
 
   public getCommits() {
-    return octokit.repos
+    return this.octokit.repos
       .listCommits({
-        owner,
-        repo
+        owner: this.owner,
+        repo: this.repo
       });
+  }
+  async getFirstAndLastCommit(): Promise<{ firstCommit: any; lastCommit: any }> {
+    const perPage = 100; // Máximo permitido por la API de GitHub
+
+    // Obtener el último commit (el más reciente)
+    let { data: commits } = await this.octokit.repos.listCommits({
+      owner: this.owner,
+      repo: this.repo,
+      per_page: perPage,
+    });
+    const lastCommit = commits[0];
+
+    // Obtener el número total de commits
+    const { data: { total_count: totalCount } } = await this.octokit.search.commits({
+      q: `* repo:${this.owner}/${this.repo}`,
+    });
+
+    // Calcular cuántas páginas de resultados hay
+    const pages = Math.ceil(totalCount / perPage);
+
+    // Obtener el primer commit (el más antiguo)
+    commits = (await this.octokit.repos.listCommits({
+      owner: this.owner,
+      repo: this.repo,
+      per_page: perPage,
+      page: pages,
+    })).data;
+    const firstCommit = commits[commits.length - 1];
+
+    return { firstCommit, lastCommit };
   }
 
   public getDirectory(treeNode: TreeNode): Directory {
@@ -74,9 +107,9 @@ export default class GitModel {
   }
   public async getTree(ref: string): Promise<TreeNode> {
     const root = new TreeNode('');
-    const { data } = await octokit.git.getTree({
-      owner,
-      repo,
+    const { data } = await this.octokit.git.getTree({
+      owner: this.owner,
+      repo: this.repo,
       tree_sha: ref,
       recursive: '1',
     });
@@ -100,11 +133,10 @@ export default class GitModel {
 
   public async getCommitFiles(ref: string) {
     try {
-      const commit = await octokit.repos.getCommit({
-        owner,
-        repo,
+      const commit = await this.octokit.repos.getCommit({
+        owner: this.owner,
+        repo: this.repo,
         ref,
-        // per_page: 2,
       });
       return commit.data.files;
     } catch (error) {
@@ -113,9 +145,9 @@ export default class GitModel {
   }
   public async getCommitPullRequests(commit_sha: string) {
     try {
-      const commit = await octokit.repos.listPullRequestsAssociatedWithCommit({
-        owner,
-        repo,
+      const commit = await this.octokit.repos.listPullRequestsAssociatedWithCommit({
+        owner: this.owner,
+        repo: this.repo,
         commit_sha
       });
       return commit.data;
