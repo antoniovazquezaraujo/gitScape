@@ -91,11 +91,12 @@ export default class GitScapeView {
     }
   }
   public createDirectoryView(directory: Directory, subLevel: number, xPosition: number) {
+    const spacing = 0.5;
     // Directory cube
     const geometry = new THREE.BoxGeometry(3, 0.4, 0.05);
     const material = new THREE.MeshLambertMaterial({ color: this.directoryColor });
     const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(xPosition, subLevel, 0);
+    cube.position.set(xPosition, subLevel*spacing, 0);
     this.scene!.add(cube);
     let path = directory.getPath();
     this.elements[path] = cube;
@@ -106,14 +107,14 @@ export default class GitScapeView {
     dirText.fontSize = 0.1;
     dirText.color = this.folderTextColor;
     dirText.anchorX = 'center';
-    dirText.position.set(xPosition, subLevel, 0.03);
+    dirText.position.set(xPosition, subLevel*spacing, 0.03);
     this.scene!.add(dirText);
     dirText.sync();
 
     // Line up to the parent directory
     const points = [];
-    points.push(new THREE.Vector3(xPosition, subLevel, 0)); // start at the left side of the subdirectory cube
-    points.push(new THREE.Vector3(xPosition - 2, subLevel, 0)); // go up to the bottom of the parent directory cube      
+    points.push(new THREE.Vector3(xPosition, subLevel*spacing, 0)); // start at the left side of the subdirectory cube
+    points.push(new THREE.Vector3(xPosition - 2, subLevel*spacing, 0)); // go up to the bottom of the parent directory cube      
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: this.horizontalLineColor });
     const line = new THREE.Line(lineGeometry, lineMaterial);
@@ -131,7 +132,7 @@ export default class GitScapeView {
 
       });
       const fileCube = new THREE.Mesh(fileGeometry, fileMaterial);
-      fileCube.position.set(xPosition, subLevel + 0.1, index * 0.2 + 0.1);
+      fileCube.position.set(xPosition, (subLevel + 0.1)*spacing, index * 0.2 + 0.1);
       this.scene!.add(fileCube);
       let path = file;
       if (directory.name !== '') {
@@ -142,7 +143,7 @@ export default class GitScapeView {
       // The border of the file cube
       const edges = new THREE.EdgesGeometry(fileGeometry);
       const line = new THREE.LineSegments(edges, new THREE.MeshLambertMaterial({ color: this.fileBorderColor }));
-      line.position.set(xPosition, subLevel + 0.1, index * 0.2 + 0.1);
+      line.position.set(xPosition, (subLevel + 0.1)*spacing, index * 0.2 + 0.1);
       this.scene!.add(line);
 
 
@@ -152,7 +153,7 @@ export default class GitScapeView {
       fileText.fontSize = 0.1;
       fileText.color = this.fileTextColor;
       fileText.anchorX = 'center';
-      fileText.position.set(xPosition, subLevel + 0.09, index * 0.2 + 0.2);
+      fileText.position.set(xPosition, (subLevel + 0.05)*spacing, index * 0.2 + 0.2);
       fileText.rotation.x = Math.PI / 2;
       this.scene!.add(fileText);
       fileText.sync();
@@ -160,13 +161,13 @@ export default class GitScapeView {
 
 
     // The subdirectories of this directory
-    var lastLevel = subLevel;
+    var lastLevel = subLevel*spacing;
     for (let key in directory.subdirectories) {
       let subdirectory = directory.subdirectories[key];
 
       // Line left   
       const points = [];
-      points.push(new THREE.Vector3(xPosition, subLevel - 1, 0));
+      points.push(new THREE.Vector3(xPosition, (subLevel - 1)*spacing, 0));
       points.push(new THREE.Vector3(xPosition, lastLevel, 0));
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const lineMaterial = new THREE.LineBasicMaterial({ color: this.verticalLineColor });
