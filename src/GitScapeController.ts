@@ -24,10 +24,14 @@ export class GitScapeController {
 
     this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
       this.directory = this.gitModel.getDirectory(root);
-      
+
       this.gitScapeView.createDirectoryView(this.directory, 0, 0);
     });
-
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space') {
+        this.gitScapeView.animateCommits();
+      }
+    });
     window.addEventListener('keydown', (event) => {
       if (event.key === 't') { // Cambia 't' a la tecla que quieras
         this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/java/Prueba.java', true);
@@ -42,23 +46,5 @@ export class GitScapeController {
   }
 
 
-  // TODO: only an idea. Not working
-  public async showCommitEffects() {
-    this.gitModel.getCommits().then(commit => {
-      commit.data.forEach(element => {
-        this.gitModel.getCommitFiles(element.sha).then(allFiles => {
-          allFiles?.forEach(file => {
-            const mesh = this.gitScapeView.elements[file.filename];
-            if (mesh != undefined) {
-              setInterval(() => {
-                (mesh.material as THREE.MeshBasicMaterial).color.set(0x000000);
-              }, 1000);
-            } else {
-              // file from commit is not in the structure!
-            }
-          });
-        });
-      });
-    });
-  }
+
 }

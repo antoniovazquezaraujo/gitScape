@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Text } from 'troika-three-text';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-
+import { Easing, Tween } from '@tweenjs/tween.js';
 
 import GitModel from './GitModel';
 import { Directory } from './GitScapeModel';
@@ -19,6 +19,8 @@ export default class GitScapeView {
   public camera: THREE.PerspectiveCamera | undefined;
   public renderer: THREE.WebGLRenderer | undefined;
   pointLight = new THREE.PointLight(0x00ff00, 1, 10);
+  lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap> | undefined;
+
   intensity = 1;
   gitModel: GitModel;
   private readonly directoryColor = 0x999999;
@@ -36,6 +38,8 @@ export default class GitScapeView {
 
   private readonly verticalLineColor = 0x999999;
   elements: { [path: string]: THREE.Mesh } = {};
+  tween!: Tween<THREE.Vector3>;
+  spotLight!: THREE.SpotLight;
 
   constructor(canvasId: string, model: GitModel) {
     this.fov = 45;
@@ -72,12 +76,21 @@ export default class GitScapeView {
       // this.stats = new Stats();
       // document.body.appendChild(this.stats.dom);
 
-      this.ambientLight = new THREE.AmbientLight(0x00ff00, 0.9);
-      this.scene.add(this.ambientLight);
+      // this.ambientLight = new THREE.AmbientLight(0x00ff00, 0.9);
+      // this.scene.add(this.ambientLight);
+
+      this.spotLight = new THREE.SpotLight(0xffffff, 1, 0, Math.PI / 1);
+      this.scene.add(this.spotLight);
 
       this.directionalLight = new THREE.DirectionalLight(0x00ffff, 1);
       this.directionalLight.position.set(0, 5, 5);
       this.scene.add(this.directionalLight);
+      // Crea una esfera para representar la luz
+      const sphereGeometry = new THREE.SphereGeometry(0.1, 5, 5);
+      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+      this.lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      this.scene.add(this.lightSphere);
+
       window.addEventListener('resize', () => this.onWindowResize(), false);
     }
   }
@@ -96,7 +109,7 @@ export default class GitScapeView {
     const geometry = new THREE.BoxGeometry(3, 0.4, 0.05);
     const material = new THREE.MeshLambertMaterial({ color: this.directoryColor });
     const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(xPosition, subLevel*spacing, 0);
+    cube.position.set(xPosition, subLevel * spacing, 0);
     this.scene!.add(cube);
     let path = directory.getPath();
     this.elements[path] = cube;
@@ -107,14 +120,14 @@ export default class GitScapeView {
     dirText.fontSize = 0.1;
     dirText.color = this.folderTextColor;
     dirText.anchorX = 'center';
-    dirText.position.set(xPosition, subLevel*spacing, 0.03);
+    dirText.position.set(xPosition, subLevel * spacing, 0.03);
     this.scene!.add(dirText);
     dirText.sync();
 
     // Line up to the parent directory
     const points = [];
-    points.push(new THREE.Vector3(xPosition, subLevel*spacing, 0)); // start at the left side of the subdirectory cube
-    points.push(new THREE.Vector3(xPosition - 2, subLevel*spacing, 0)); // go up to the bottom of the parent directory cube      
+    points.push(new THREE.Vector3(xPosition, subLevel * spacing, 0)); // start at the left side of the subdirectory cube
+    points.push(new THREE.Vector3(xPosition - 2, subLevel * spacing, 0)); // go up to the bottom of the parent directory cube      
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: this.horizontalLineColor });
     const line = new THREE.Line(lineGeometry, lineMaterial);
@@ -125,14 +138,14 @@ export default class GitScapeView {
 
       // The file cube
       const fileGeometry = new THREE.BoxGeometry(3, 0.01, 0.2);
-      const fileMaterial = new THREE.MeshBasicMaterial({
+      const fileMaterial = new THREE.MeshLambertMaterial({
         color: this.fileColor,
         transparent: true,
-        opacity: 0.9
+        opacity: 1
 
       });
       const fileCube = new THREE.Mesh(fileGeometry, fileMaterial);
-      fileCube.position.set(xPosition, (subLevel + 0.1)*spacing, index * 0.2 + 0.1);
+      fileCube.position.set(xPosition, (subLevel + 0.1) * spacing, index * 0.2 + 0.1);
       this.scene!.add(fileCube);
       let path = file;
       if (directory.name !== '') {
@@ -143,7 +156,7 @@ export default class GitScapeView {
       // The border of the file cube
       const edges = new THREE.EdgesGeometry(fileGeometry);
       const line = new THREE.LineSegments(edges, new THREE.MeshLambertMaterial({ color: this.fileBorderColor }));
-      line.position.set(xPosition, (subLevel + 0.1)*spacing, index * 0.2 + 0.1);
+      line.position.set(xPosition, (subLevel + 0.1) * spacing, index * 0.2 + 0.1);
       this.scene!.add(line);
 
 
@@ -153,7 +166,7 @@ export default class GitScapeView {
       fileText.fontSize = 0.1;
       fileText.color = this.fileTextColor;
       fileText.anchorX = 'center';
-      fileText.position.set(xPosition, (subLevel + 0.05)*spacing, index * 0.2 + 0.2);
+      fileText.position.set(xPosition, (subLevel + 0.05) * spacing, index * 0.2 + 0.2);
       fileText.rotation.x = Math.PI / 2;
       this.scene!.add(fileText);
       fileText.sync();
@@ -161,13 +174,13 @@ export default class GitScapeView {
 
 
     // The subdirectories of this directory
-    var lastLevel = subLevel*spacing;
+    var lastLevel = subLevel * spacing;
     for (let key in directory.subdirectories) {
       let subdirectory = directory.subdirectories[key];
 
       // Line left   
       const points = [];
-      points.push(new THREE.Vector3(xPosition, (subLevel - 1)*spacing, 0));
+      points.push(new THREE.Vector3(xPosition, (subLevel - 1) * spacing, 0));
       points.push(new THREE.Vector3(xPosition, lastLevel, 0));
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const lineMaterial = new THREE.LineBasicMaterial({ color: this.verticalLineColor });
@@ -184,6 +197,7 @@ export default class GitScapeView {
       window.requestAnimationFrame(() => this.animate());
       this.renderer.render(this.scene!, this.camera);
       this.controls!.update();
+      this.tween.update();
     }
   }
 
@@ -214,6 +228,82 @@ export default class GitScapeView {
         this.clearScene();
         this.createDirectoryView(directory, 0, 0);
       }
+    });
+  }
+
+  async animateCommits() {
+    const slider = document.getElementById('slider') as HTMLInputElement;
+    const startCommitIndex = parseInt(slider.value, 10);
+
+
+    const commit = this.gitModel.allCommits[startCommitIndex];
+
+    // Obtiene los archivos que cambiaron en este commit
+    await this.gitModel.getCommitFiles(commit.sha).then(async (files) => {
+
+      // Para cada archivo que cambió...
+      for (const file of files!) {
+        // Encuentra el objeto 3D correspondiente a este archivo
+        const fileObject = this.elements[file.filename];
+
+        if (fileObject) {
+
+          await this.moveDirectionalLightTo(fileObject.position);
+
+        }
+      }
+    });
+
+  }
+  async moveDirectionalLightTo(targetPosition: THREE.Vector3) {
+    if (this.directionalLight && this.lightSphere) {
+      const startPosition = this.lightSphere.position.clone();
+      const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 1, targetPosition.z + 2);
+
+      // Primera animación: mueve la esfera hasta la posición encima del archivo
+      await new Promise<void>(resolve => {
+        this.tween = new Tween(startPosition)
+          .to(endPosition, 1000)
+          .easing(Easing.Cubic.InOut)
+          .onUpdate(() => {
+            this.directionalLight!.position.set(startPosition.x, startPosition.y, startPosition.z);
+            this.lightSphere!.position.set(startPosition.x, startPosition.y, startPosition.z);
+            this.spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
+            this.spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
+          })
+          .onComplete(() => {
+            resolve();
+          })
+          .start();
+      });
+
+
+      await this.castLightRay(targetPosition);
+
+    }
+  }
+
+  async castLightRay(targetPosition: THREE.Vector3) {
+    const points = [];
+    points.push(new THREE.Vector3(this.lightSphere!.position.x, this.lightSphere!.position.y, this.lightSphere!.position.z));
+    points.push(new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+    this.scene!.add(line);
+    if (this.spotLight) {
+      this.spotLight.intensity = 1;
+    }
+
+    // Espera 1 segundo y elimina la línea
+    await new Promise<void>(resolve => {
+      setTimeout(() => {
+        this.scene!.remove(line);
+        if (this.spotLight) {
+          this.spotLight.intensity = 0;
+        }
+        resolve();
+      }, 500);
     });
   }
 }
