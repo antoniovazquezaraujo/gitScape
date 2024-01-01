@@ -6,40 +6,32 @@ import { Easing, Tween } from '@tweenjs/tween.js';
 import GitModel from './GitModel';
 import { Directory } from './GitScapeModel';
 export default class GitScapeView {
+  public scene: THREE.Scene | undefined;
+  public camera: THREE.PerspectiveCamera | undefined;
+  public renderer: THREE.WebGLRenderer | undefined;
   private fov: number;
   private nearPlane: number;
   private farPlane: number;
   private canvasId: string;
-  // private clock: THREE.Clock | undefined;
-  // private stats: Stats | undefined;
   private controls: OrbitControls | undefined;
-  private ambientLight: THREE.AmbientLight | undefined;
-  private directionalLight: THREE.DirectionalLight | undefined;
-  public scene: THREE.Scene | undefined;
-  public camera: THREE.PerspectiveCamera | undefined;
-  public renderer: THREE.WebGLRenderer | undefined;
-  pointLight = new THREE.PointLight(0x00ff00, 1, 10);
-  lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap> | undefined;
-
-  intensity = 1;
   gitModel: GitModel;
-  private readonly directoryColor = 0x999999;
-
-
-  private readonly fileColor = 0xcacc66;
-
-  private readonly fileBorderColor = 0x999999;
-
-  private readonly fileTextColor = 0x000000;
-
-  private readonly folderTextColor = 0x000000;
-
-  private readonly horizontalLineColor = 0x999999;
-
-  private readonly verticalLineColor = 0x999999;
   elements: { [path: string]: THREE.Mesh } = {};
   tween!: Tween<THREE.Vector3>;
+
+  ambientLight: THREE.AmbientLight | undefined;
+  directionalLight: THREE.DirectionalLight | undefined;
+  pointLight = new THREE.PointLight(0x00ff00, 1, 10);
+  lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap> | undefined;
   spotLight!: THREE.SpotLight;
+
+
+  private readonly directoryColor = 0x999999;
+  private readonly fileColor = 0xffffff;
+  private readonly fileBorderColor = 0x999999;
+  private readonly fileTextColor = 0x000000;
+  private readonly folderTextColor = 0x000000;
+  private readonly horizontalLineColor = 0x999999;
+  private readonly verticalLineColor = 0x999999;
 
   constructor(canvasId: string, model: GitModel) {
     this.fov = 45;
@@ -76,13 +68,13 @@ export default class GitScapeView {
       // this.stats = new Stats();
       // document.body.appendChild(this.stats.dom);
 
-      // this.ambientLight = new THREE.AmbientLight(0x00ff00, 0.9);
-      // this.scene.add(this.ambientLight);
+      this.ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+      this.scene.add(this.ambientLight);
 
       this.spotLight = new THREE.SpotLight(0xffffff, 1, 0, Math.PI / 1);
       this.scene.add(this.spotLight);
 
-      this.directionalLight = new THREE.DirectionalLight(0x00ffff, 1);
+      this.directionalLight = new THREE.DirectionalLight(0xffffff, 1);
       this.directionalLight.position.set(0, 5, 5);
       this.scene.add(this.directionalLight);
       // Crea una esfera para representar la luz
@@ -249,7 +241,7 @@ export default class GitScapeView {
         if (fileObject) {
 
           await this.moveDirectionalLightTo(fileObject.position);
-
+          await this.makeFileGlow(fileObject);
         }
       }
     });
@@ -305,5 +297,21 @@ export default class GitScapeView {
         resolve();
       }, 500);
     });
+  }
+  async makeFileGlow(fileMesh: THREE.Mesh) {
+    // Guarda el material original del archivo
+    const originalMaterial = fileMesh.material;
+
+    // Crea un nuevo material que siempre se renderiza con el mismo color
+    const glowingMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Cambia el color según lo necesites
+
+    // Cambia el material del archivo al material brillante
+    fileMesh.material = glowingMaterial;
+
+    // Espera 1 segundo
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Cambia el material del archivo de nuevo al material original
+    fileMesh.material = originalMaterial;
   }
 }
