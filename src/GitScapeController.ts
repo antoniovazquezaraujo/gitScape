@@ -29,7 +29,7 @@ export class GitScapeController {
     });
     document.addEventListener('keydown', (event) => {
       if (event.code === 'Space') {
-        this.gitScapeView.animateCommits();
+        this.gitScapeView.animateCommit();
       }
     });
     window.addEventListener('keydown', (event) => {

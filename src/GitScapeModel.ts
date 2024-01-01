@@ -36,11 +36,12 @@ export class Directory {
 
 export class GitScapeModel {
   gitModel: GitModel;
+
   public constructor(gitModel: GitModel) {
     this.gitModel = gitModel;
   }
+  
   public printTree(node: TreeNode, prefix: number): void {
-
     prefix++
     if (!node.isFile) {
       console.log('  '.repeat(prefix) + "[" + node.name + "]");
@@ -51,6 +52,7 @@ export class GitScapeModel {
       this.printTree(node.children[child], prefix);
     }
   }
+
   public addElementToDirectory(root: Directory, path: string, element: TreeNode): void {
     const directory = this.findDirectoryByPath(root, path);
     if (directory) {

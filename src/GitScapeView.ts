@@ -5,24 +5,28 @@ import { Easing, Tween } from '@tweenjs/tween.js';
 
 import GitModel from './GitModel';
 import { Directory } from './GitScapeModel';
+
 export default class GitScapeView {
   public scene: THREE.Scene | undefined;
   public camera: THREE.PerspectiveCamera | undefined;
   public renderer: THREE.WebGLRenderer | undefined;
+  private controls: OrbitControls | undefined;
   private fov: number;
   private nearPlane: number;
   private farPlane: number;
   private canvasId: string;
-  private controls: OrbitControls | undefined;
   gitModel: GitModel;
   elements: { [path: string]: THREE.Mesh } = {};
-  tween!: Tween<THREE.Vector3>;
+  tween: Tween<THREE.Vector3>;
+  ambientLight: THREE.AmbientLight;
 
-  ambientLight: THREE.AmbientLight | undefined;
-  directionalLight: THREE.DirectionalLight | undefined;
-  pointLight = new THREE.PointLight(0x00ff00, 1, 10);
-  lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap> | undefined;
-  spotLight!: THREE.SpotLight;
+  programmers: {
+    [programmer: string]: {
+      lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
+      spotLight: THREE.SpotLight,
+      label: Text
+    }
+  } = {};
 
 
   private readonly directoryColor = 0x999999;
@@ -34,6 +38,8 @@ export default class GitScapeView {
   private readonly verticalLineColor = 0x999999;
 
   constructor(canvasId: string, model: GitModel) {
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    this.tween = new Tween(new THREE.Vector3(0, 0, 0));
     this.fov = 45;
     this.nearPlane = 1;
     this.farPlane = 1000;
@@ -51,8 +57,6 @@ export default class GitScapeView {
       this.farPlane
     );
     this.camera.position.z = 10;
-    this.pointLight.position.set(1, 1, 1); // Ajusta la posición de la luz a la posición del objeto
-    this.scene.add(this.pointLight);
 
     const canvas = document.getElementById(this.canvasId);
     if (canvas instanceof HTMLCanvasElement) {
@@ -63,26 +67,8 @@ export default class GitScapeView {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(this.renderer.domElement);
 
-      // this.clock = new THREE.Clock();
       this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-      // this.stats = new Stats();
-      // document.body.appendChild(this.stats.dom);
-
-      this.ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
       this.scene.add(this.ambientLight);
-
-      this.spotLight = new THREE.SpotLight(0xffffff, 1, 0, Math.PI / 1);
-      this.scene.add(this.spotLight);
-
-      this.directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-      this.directionalLight.position.set(0, 5, 5);
-      this.scene.add(this.directionalLight);
-      // Crea una esfera para representar la luz
-      const sphereGeometry = new THREE.SphereGeometry(0.1, 5, 5);
-      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-      this.lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      this.scene.add(this.lightSphere);
-
       window.addEventListener('resize', () => this.onWindowResize(), false);
     }
   }
@@ -97,14 +83,21 @@ export default class GitScapeView {
   }
   public createDirectoryView(directory: Directory, subLevel: number, xPosition: number) {
     const spacing = 0.5;
+    const dirX = xPosition;
+    const dirY = subLevel * spacing;
+    const horizontalLineShift = 2;
+    const elementWidth = 1.5;
+    const elementHeight = 0.5;
+    // Directory group
+    const dirGroup = new THREE.Group();
+
     // Directory cube
-    const geometry = new THREE.BoxGeometry(3, 0.4, 0.05);
+    const geometry = new THREE.BoxGeometry(elementWidth, elementHeight, 0.05);
     const material = new THREE.MeshLambertMaterial({ color: this.directoryColor });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(xPosition, subLevel * spacing, 0);
-    this.scene!.add(cube);
+    const dirCube = new THREE.Mesh(geometry, material);
     let path = directory.getPath();
-    this.elements[path] = cube;
+    this.elements[path] = dirCube;
+    dirGroup.add(dirCube);
 
     // Directory name
     const dirText = new Text();
@@ -112,33 +105,38 @@ export default class GitScapeView {
     dirText.fontSize = 0.1;
     dirText.color = this.folderTextColor;
     dirText.anchorX = 'center';
-    dirText.position.set(xPosition, subLevel * spacing, 0.03);
-    this.scene!.add(dirText);
+    dirText.position.z = 0.03;
     dirText.sync();
+    dirGroup.add(dirText);
+
+    dirGroup.position.set(dirX, dirY, 0);
+    this.scene!.add(dirGroup);
 
     // Line up to the parent directory
     const points = [];
-    points.push(new THREE.Vector3(xPosition, subLevel * spacing, 0)); // start at the left side of the subdirectory cube
-    points.push(new THREE.Vector3(xPosition - 2, subLevel * spacing, 0)); // go up to the bottom of the parent directory cube      
+    points.push(new THREE.Vector3(dirX, dirY, 0)); // start at the left side of the subdirectory cube
+    points.push(new THREE.Vector3(dirX - horizontalLineShift, dirY, 0)); // go left one level
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: this.horizontalLineColor });
     const line = new THREE.Line(lineGeometry, lineMaterial);
     this.scene!.add(line);
 
+    const filesGroup = new THREE.Group();
     // Files of this directory
     directory.files.forEach((file: any, index: any) => {
+      // File group
+      const fileGroup = new THREE.Group();
 
       // The file cube
-      const fileGeometry = new THREE.BoxGeometry(3, 0.01, 0.2);
+      const fileGeometry = new THREE.BoxGeometry(elementWidth, .5, .2);
       const fileMaterial = new THREE.MeshLambertMaterial({
         color: this.fileColor,
         transparent: true,
         opacity: 1
-
       });
       const fileCube = new THREE.Mesh(fileGeometry, fileMaterial);
-      fileCube.position.set(xPosition, (subLevel + 0.1) * spacing, index * 0.2 + 0.1);
-      this.scene!.add(fileCube);
+      fileGroup.add(fileCube);
+
       let path = file;
       if (directory.name !== '') {
         path = directory.getPath() + "/" + file;
@@ -148,22 +146,39 @@ export default class GitScapeView {
       // The border of the file cube
       const edges = new THREE.EdgesGeometry(fileGeometry);
       const line = new THREE.LineSegments(edges, new THREE.MeshLambertMaterial({ color: this.fileBorderColor }));
-      line.position.set(xPosition, (subLevel + 0.1) * spacing, index * 0.2 + 0.1);
-      this.scene!.add(line);
+      fileGroup.add(line);
 
+      // Divide el nombre del directorio en varias líneas si es muy largo
+      const maxCharsPerLine = 20; // Cambia esto según el tamaño del cubo
+      const lines = file.match(new RegExp(`.{1,${maxCharsPerLine}}`, 'g')) || [];
 
-      // The file name text
-      const fileText = new Text();
-      fileText.text = file;
-      fileText.fontSize = 0.1;
-      fileText.color = this.fileTextColor;
-      fileText.anchorX = 'center';
-      fileText.position.set(xPosition, (subLevel + 0.05) * spacing, index * 0.2 + 0.2);
-      fileText.rotation.x = Math.PI / 2;
-      this.scene!.add(fileText);
-      fileText.sync();
+      // Crea un objeto Text para cada línea
+      for (let i = 0; i < lines.length; i++) {
+        const fileText = new Text();
+        fileText.text = lines[i];
+        fileText.fontSize = 0.1;
+        fileText.color = this.fileTextColor;
+        fileText.anchorX = 'center';
+        fileText.position.z = 0.2;
+        fileText.position.y = 0.15 + (-i * 0.15); // Ajusta la posición y para cada línea
+        fileText.sync();
+        fileGroup.add(fileText);
+      }
+
+      fileGroup.position.set(((index + 1) * elementWidth) + dirX, (subLevel) * spacing, 0);
+      filesGroup.add(fileGroup);
+
+      document.addEventListener('keydown', (event) => {
+        if (event.code === 'KeyX') {
+          fileGroup.rotateX(Math.PI / 2);
+        } else if (event.code === 'KeyY') {
+          fileGroup.rotateY(Math.PI / 2);
+        } else if (event.code === 'KeyZ') {
+          fileGroup.rotateZ(Math.PI / 2);
+        }
+      });
     });
-
+    this.scene!.add(filesGroup);
 
     // The subdirectories of this directory
     var lastLevel = subLevel * spacing;
@@ -223,95 +238,92 @@ export default class GitScapeView {
     });
   }
 
-  async animateCommits() {
+  async animateCommit() {
     const slider = document.getElementById('slider') as HTMLInputElement;
     const startCommitIndex = parseInt(slider.value, 10);
-
-
     const commit = this.gitModel.allCommits[startCommitIndex];
+    const programmer = commit.commit.author.email;
 
-    // Obtiene los archivos que cambiaron en este commit
+    if (!this.programmers[programmer]) {
+      const label = new Text();
+      label.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
+      label.fontSize = 0.1;
+      label.color = 0xff0066; // Cambia esto al color que desees
+      label.anchorX = 'center';
+      label.position.y = 0.1; // Ajusta esto para cambiar la posición de la etiqueta sobre la esfera
+      label.sync();
+      this.scene!.add(label);
+
+      const sphereGeometry = new THREE.SphereGeometry(0.1, 10, 10);
+      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+      const lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      this.scene!.add(lightSphere);
+      const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
+      this.scene!.add(spotLight);
+      this.programmers[programmer] = {
+        lightSphere,
+        spotLight,
+        label
+      };
+    } else {
+      this.scene!.add(this.programmers[programmer].lightSphere);
+      this.scene!.add(this.programmers[programmer].spotLight);
+      this.scene!.add(this.programmers[programmer].label);
+    }
+
     await this.gitModel.getCommitFiles(commit.sha).then(async (files) => {
-
-      // Para cada archivo que cambió...
       for (const file of files!) {
-        // Encuentra el objeto 3D correspondiente a este archivo
         const fileObject = this.elements[file.filename];
-
         if (fileObject) {
-
-          await this.moveDirectionalLightTo(fileObject.position);
+          // await this.moveDirectionalLightTo(fileObject.parent!.position);
+          await this.moveProgrammerTo(programmer, fileObject.parent!.position);
           await this.makeFileGlow(fileObject);
         }
       }
     });
-
-  }
-  async moveDirectionalLightTo(targetPosition: THREE.Vector3) {
-    if (this.directionalLight && this.lightSphere) {
-      const startPosition = this.lightSphere.position.clone();
-      const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 1, targetPosition.z + 2);
-
-      // Primera animación: mueve la esfera hasta la posición encima del archivo
-      await new Promise<void>(resolve => {
-        this.tween = new Tween(startPosition)
-          .to(endPosition, 1000)
-          .easing(Easing.Cubic.InOut)
-          .onUpdate(() => {
-            this.directionalLight!.position.set(startPosition.x, startPosition.y, startPosition.z);
-            this.lightSphere!.position.set(startPosition.x, startPosition.y, startPosition.z);
-            this.spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
-            this.spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
-          })
-          .onComplete(() => {
-            resolve();
-          })
-          .start();
-      });
-
-
-      await this.castLightRay(targetPosition);
-
-    }
   }
 
-  async castLightRay(targetPosition: THREE.Vector3) {
+
+  async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3) {
+    const startPosition = this.programmers[programmer].lightSphere.position.clone();
+    const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 1, targetPosition.z + 2);
+    await new Promise<void>(resolve => {
+      this.tween = new Tween(startPosition)
+        .to(endPosition, 1000)
+        .easing(Easing.Cubic.InOut)
+        .onUpdate(() => {
+          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
+          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+        })
+        .onComplete(() => {
+          resolve();
+        })
+        .start();
+    });
+    this.fireProgrammerRay(programmer, targetPosition);
+  }
+  fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3) {
     const points = [];
-    points.push(new THREE.Vector3(this.lightSphere!.position.x, this.lightSphere!.position.y, this.lightSphere!.position.z));
+    points.push(new THREE.Vector3(this.programmers[programmer].lightSphere.position.x, this.programmers[programmer].lightSphere.position.y, this.programmers[programmer].lightSphere.position.z));
     points.push(new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
     const line = new THREE.Line(lineGeometry, lineMaterial);
     this.scene!.add(line);
-    if (this.spotLight) {
-      this.spotLight.intensity = 1;
-    }
-
-    // Espera 1 segundo y elimina la línea
-    await new Promise<void>(resolve => {
-      setTimeout(() => {
-        this.scene!.remove(line);
-        if (this.spotLight) {
-          this.spotLight.intensity = 0;
-        }
-        resolve();
-      }, 500);
-    });
+    this.programmers[programmer].spotLight.intensity = 1;
+    setTimeout(() => {
+      this.scene!.remove(line);
+      this.programmers[programmer].spotLight.intensity = 0;
+    }, 500);
   }
+
   async makeFileGlow(fileMesh: THREE.Mesh) {
-    // Guarda el material original del archivo
     const originalMaterial = fileMesh.material;
-
-    // Crea un nuevo material que siempre se renderiza con el mismo color
     const glowingMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Cambia el color según lo necesites
-
-    // Cambia el material del archivo al material brillante
     fileMesh.material = glowingMaterial;
-
-    // Espera 1 segundo
     await new Promise(resolve => setTimeout(resolve, 300));
-
-    // Cambia el material del archivo de nuevo al material original
     fileMesh.material = originalMaterial;
   }
 }

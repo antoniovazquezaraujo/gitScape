@@ -6,7 +6,7 @@ export default class GitModel {
   octokit: Octokit;
   owner: string;
   repo: string;
-
+  programmers: string[] = [];
   allCommits: any[] = [];
 
   public constructor() {
@@ -18,6 +18,13 @@ export default class GitModel {
     this.owner = 'antoniovazquezaraujo';
     this.repo = 'LeTrain';
   }
+  public addProgrammer(programmer: string) {
+    this.programmers.push(programmer);
+  }
+  public findProgrammer(programmer: string) {
+    return this.programmers.find(x => x === programmer);
+  }
+  
   public async initialize(){
     return this.reloadAllCommits();
   }
