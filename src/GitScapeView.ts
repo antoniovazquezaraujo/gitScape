@@ -238,10 +238,50 @@ export default class GitScapeView {
     });
   }
 
-  async animateCommit() {
-    const slider = document.getElementById('slider') as HTMLInputElement;
-    const startCommitIndex = parseInt(slider.value, 10);
-    const commit = this.gitModel.allCommits[startCommitIndex];
+  public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.programmers[programmer].lightSphere.material.color.set(0x808080);
+      const startPosition = this.programmers[programmer].lightSphere.position.clone();
+      const endPosition = this.programmers[programmer].lightSphere.position.clone();
+      endPosition.z = 2;
+      this.tween = new Tween(startPosition)
+        .to(endPosition, 1000)
+        .easing(Easing.Cubic.InOut)
+        .onUpdate(() => {
+          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
+          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+        })
+        .onComplete(() => {
+          resolve();
+        })
+        .start();
+    });
+  }
+  public moveProgrammerToWorkOrbit(programmer: string): Promise<void> {
+    return new Promise((resolve) => {
+      const startPosition = this.programmers[programmer].lightSphere.position.clone();
+      const endPosition = this.programmers[programmer].lightSphere.position.clone();
+      endPosition.z = 1;
+      this.tween = new Tween(startPosition)
+        .to(endPosition, 200)
+        // .easing(Easing.Cubic.InOut)
+        .onUpdate(() => {
+          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
+          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+        })
+        .onComplete(() => {
+          this.programmers[programmer].lightSphere.material.color.set(0xff00ff);
+          resolve();
+        })
+        .start();
+    });
+  }
+  async animateCommit(commit: any) {
+
     const programmer = commit.commit.author.email;
 
     if (!this.programmers[programmer]) {
@@ -265,12 +305,8 @@ export default class GitScapeView {
         spotLight,
         label
       };
-    } else {
-      this.scene!.add(this.programmers[programmer].lightSphere);
-      this.scene!.add(this.programmers[programmer].spotLight);
-      this.scene!.add(this.programmers[programmer].label);
     }
-
+    await this.moveProgrammerToWorkOrbit(programmer);
     await this.gitModel.getCommitFiles(commit.sha).then(async (files) => {
       for (const file of files!) {
         const fileObject = this.elements[file.filename];
@@ -281,6 +317,7 @@ export default class GitScapeView {
         }
       }
     });
+    await this.moveProgrammerToWaitOrbit(programmer);
   }
 
 
@@ -292,10 +329,10 @@ export default class GitScapeView {
         .to(endPosition, 1000)
         .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
-          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
+          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, 1);
+          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, 1);
           this.programmers[programmer].spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
-          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, 1 + 0.1);
         })
         .onComplete(() => {
           resolve();

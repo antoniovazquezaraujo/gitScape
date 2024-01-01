@@ -29,20 +29,28 @@ export class GitScapeController {
     });
     document.addEventListener('keydown', (event) => {
       if (event.code === 'Space') {
-        this.gitScapeView.animateCommit();
+        this.animateCommits();
       }
     });
-    window.addEventListener('keydown', (event) => {
-      if (event.key === 't') { // Cambia 't' a la tecla que quieras
-        this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/java/Prueba.java', true);
-        this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/antlr4/pruebas', false);
-        this.gitScapeModel.removeElementFromDirectory(this.directory, 'src/main/java/letrain/command/CommandManager.java');
-        this.gitScapeModel.removeElementFromDirectory(this.directory, '.idea');
-        this.gitScapeView.clearScene();
-        this.gitScapeView.createDirectoryView(this.directory, 0, 0);
-      }
-    });
+    // window.addEventListener('keydown', (event) => {
+    //   if (event.key === 't') { // Cambia 't' a la tecla que quieras
+    //     this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/java/Prueba.java', true);
+    //     this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/antlr4/pruebas', false);
+    //     this.gitScapeModel.removeElementFromDirectory(this.directory, 'src/main/java/letrain/command/CommandManager.java');
+    //     this.gitScapeModel.removeElementFromDirectory(this.directory, '.idea');
+    //     this.gitScapeView.clearScene();
+    //     this.gitScapeView.createDirectoryView(this.directory, 0, 0);
+    //   }
+    // });
     this.gitScapeView.animate();
+  }
+  async animateCommits() {
+    const slider = document.getElementById('slider') as HTMLInputElement;
+    var commitIndex = parseInt(slider.value, 10);
+    while (commitIndex < this.gitModel.allCommits.length) {
+      await this.gitScapeView.animateCommit(this.gitModel.allCommits[commitIndex]);
+      commitIndex++;
+    }
   }
 
 
