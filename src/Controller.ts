@@ -1,24 +1,22 @@
-import { GitScapeModel } from './GitScapeModel';
-import GitModel from './GitModel';
-import { Directory } from './GitScapeModel';
-import GitScapeView from "./GitScapeView";
+import { Model } from './Model';
+import { Directory } from './Model';
+import View from "./View";
 
 // Controlador
-export class GitScapeController {
-  private gitModel: GitModel;
-  private gitScapeView: GitScapeView;
-  private gitScapeModel: GitScapeModel;
+export class Controller {
+  private view: View;
+  public model: Model;
   directory!: Directory;
 
-  constructor(gitScapeModel: GitScapeModel, view: GitScapeView) {
-    this.gitScapeModel = gitScapeModel;
-    this.gitModel = gitScapeModel.gitModel;
-    this.gitScapeView = view;
-    this.gitScapeView.initialize();
+  constructor(view: View) {
+    this.model = view.model;
+    this.model.initialize();
+    this.view = view;
+    this.view.initialize();
 
 
-    this.gitModel.initialize().then(() => {
-      this.gitScapeView.createSliderDateEventsListener();
+    this.model.initialize().then(() => {
+      this.view.createSliderDateEventsListener();
     });
 
     // this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
@@ -41,13 +39,13 @@ export class GitScapeController {
     //     this.gitScapeView.createDirectoryView(this.directory, 0, 0);
     //   }
     // });
-    this.gitScapeView.animate();
+    this.view.animate();
   }
   async animateCommits() {
     const slider = document.getElementById('slider') as HTMLInputElement;
     var commitIndex = parseInt(slider.value, 10);
-    while (commitIndex < this.gitModel.allCommits.length) {
-      await this.gitScapeView.animateCommit(this.gitModel.allCommits[commitIndex]);
+    while (commitIndex < this.model.allCommits.length) {
+      await this.view.animateCommit(this.model.allCommits[commitIndex]);
       commitIndex++;
     }
   }

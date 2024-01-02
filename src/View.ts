@@ -3,10 +3,9 @@ import { Text } from 'troika-three-text';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Easing, Tween } from '@tweenjs/tween.js';
 
-import GitModel from './GitModel';
-import { Directory } from './GitScapeModel';
+import { Directory, Model } from './Model';
 
-export default class GitScapeView {
+export default class View {
   public scene: THREE.Scene | undefined;
   public camera: THREE.PerspectiveCamera | undefined;
   public renderer: THREE.WebGLRenderer | undefined;
@@ -15,7 +14,7 @@ export default class GitScapeView {
   private nearPlane: number;
   private farPlane: number;
   private canvasId: string;
-  gitModel: GitModel;
+  public model: Model;
   elements: { [path: string]: THREE.Mesh } = {};
   tween: Tween<THREE.Vector3>;
   ambientLight: THREE.AmbientLight;
@@ -37,14 +36,14 @@ export default class GitScapeView {
   private readonly horizontalLineColor = 0x999999;
   private readonly verticalLineColor = 0x999999;
 
-  constructor(canvasId: string, model: GitModel) {
+  constructor(model: Model) {
+    this.model = model;
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.tween = new Tween(new THREE.Vector3(0, 0, 0));
     this.fov = 45;
     this.nearPlane = 1;
     this.farPlane = 1000;
-    this.canvasId = canvasId;
-    this.gitModel = model;
+    this.canvasId = "app";
     this.initialize();
   }
 
@@ -68,6 +67,7 @@ export default class GitScapeView {
       document.body.appendChild(this.renderer.domElement);
 
       this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+
       this.scene.add(this.ambientLight);
       window.addEventListener('resize', () => this.onWindowResize(), false);
     }
@@ -219,21 +219,20 @@ export default class GitScapeView {
 
   public createSliderDateEventsListener() {
     const slider = document.getElementById('slider') as HTMLInputElement;
-    slider.max = (this.gitModel.allCommits.length - 1).toString();
+    slider.max = (this.model.allCommits.length - 1).toString();
     slider.addEventListener('input', async (event) => {
       const slider = event.target as HTMLInputElement;
       const commitIndex = parseInt(slider.value, 10);
-
-      const commit = this.gitModel.allCommits[commitIndex];
+      this.model.setCommitIndex(commitIndex);
+      this.model.reloadDirectory();
+      const directory1 = this.model.getDirectory();
+      const commit = this.model.getCurrentCommit();
 
       if (commit) {
         const datetime = new Date(commit.commit.author.date);
         (document.getElementById('datetime') as HTMLInputElement).value = datetime.toLocaleString();
-
-        const root = await this.gitModel.getTree(commit.sha);
-        const directory = this.gitModel.getDirectory(root);
         this.clearScene();
-        this.createDirectoryView(directory, 0, 0);
+        this.createDirectoryView(directory1!, 0, 0);
       }
     });
   }
@@ -307,7 +306,7 @@ export default class GitScapeView {
       };
     }
     await this.moveProgrammerToWorkOrbit(programmer);
-    await this.gitModel.getCommitFiles(commit.sha).then(async (files) => {
+    await this.model.getCommitFiles(commit.sha).then(async (files) => {
       for (const file of files!) {
         const fileObject = this.elements[file.filename];
         if (fileObject) {
@@ -341,6 +340,7 @@ export default class GitScapeView {
     });
     this.fireProgrammerRay(programmer, targetPosition);
   }
+
   fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3) {
     const points = [];
     points.push(new THREE.Vector3(this.programmers[programmer].lightSphere.position.x, this.programmers[programmer].lightSphere.position.y, this.programmers[programmer].lightSphere.position.z));
