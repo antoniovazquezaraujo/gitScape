@@ -6,7 +6,6 @@ export default class GitModel {
   octokit: Octokit;
   owner: string;
   repo: string;
-  programmers: string[] = [];
   allCommits: any[] = [];
 
   public constructor() {
@@ -18,22 +17,17 @@ export default class GitModel {
     this.owner = 'antoniovazquezaraujo';
     this.repo = 'LeTrain';
   }
-  public addProgrammer(programmer: string) {
-    this.programmers.push(programmer);
-  }
-  public findProgrammer(programmer: string) {
-    return this.programmers.find(x => x === programmer);
-  }
-  
-  public async initialize(){
+
+  public async initialize() {
     return this.reloadAllCommits();
   }
-  
+
+  // obtiene todos los commits de un repositorio
   async reloadAllCommits(): Promise<any[]> {
     const perPage = 100; // Máximo permitido por la API de GitHub
     let page = 1;
     this.allCommits = [];
-  
+
     while (true) {
       const { data: commits } = await this.octokit.repos.listCommits({
         owner: this.owner,
@@ -41,8 +35,8 @@ export default class GitModel {
         per_page: perPage,
         page: page,
       });
-  
-      this.allCommits = this.allCommits.concat(commits); 
+
+      this.allCommits = this.allCommits.concat(commits);
       if (commits.length < perPage) {
         break;
       }
@@ -51,54 +45,44 @@ export default class GitModel {
     return this.allCommits;
   }
 
+  // obtiene todos los commits de un repositorio, si ya se han obtenido previamente, los devuelve
   public async getCommits() {
-    if(this.allCommits == undefined) {
+    if (this.allCommits == undefined) {
       await this.reloadAllCommits();
     }
     return this.allCommits;
   }
 
+  // obtiene el primer commit de un repositorio
   getFirstCommit(): any {
     return this.allCommits[this.allCommits.length - 1];
   }
+
+  // obtiene el último commit de un repositorio
   getLastCommit(): any {
     return this.allCommits[0];
   }
 
-  // async getFirstAndLastCommit(): Promise<{ firstCommit: any; lastCommit: any }> {
-  //   const perPage = 100; // Máximo permitido por la API de GitHub
-
-  //   // Obtener el último commit (el más reciente)
-  //   let { data: commits } = await this.octokit.repos.listCommits({
-  //     owner: this.owner,
-  //     repo: this.repo,
-  //     per_page: perPage,
-  //   });
-  //   const lastCommit = commits[0];
-
-  //   // Obtener el número total de commits
-  //   const { data: { total_count: totalCount } } = await this.octokit.search.commits({
-  //     q: `* repo:${this.owner}/${this.repo}`,
-  //   });
-
-  //   // Calcular cuántas páginas de resultados hay
-  //   const pages = Math.ceil(totalCount / perPage);
-
-  //   // Obtener el primer commit (el más antiguo)
-  //   commits = (await this.octokit.repos.listCommits({
-  //     owner: this.owner,
-  //     repo: this.repo,
-  //     per_page: perPage,
-  //     page: pages,
-  //   })).data;
-  //   const firstCommit = commits[commits.length - 1];
-
-  //   return { firstCommit, lastCommit };
-  // }
-
+  public findPathInTreeNode(path: string, treeNode: TreeNode): TreeNode | null {
+    console.log(path);
+    const parts = path.split('/');
+    console.log(parts);
+    let currentNode = treeNode;
+    for (const part of parts) {
+      if (part in currentNode.children) {
+        currentNode = currentNode.children[part];
+      } else {
+        return null;
+      }
+    }
+    return currentNode;
+  }
+  // Obtiene una estructura de Directory a partir de un TreeNode
   public getDirectory(treeNode: TreeNode): Directory {
     return this.createDirectory(treeNode, null);
   }
+
+  // Crea una estructura de Directory a partir de un TreeNode de forma recursiva
   public createDirectory(node: TreeNode, parent: Directory | null = null): Directory {
     const directory = new Directory(node.name, parent);
 
@@ -113,6 +97,8 @@ export default class GitModel {
     }
     return directory;
   }
+
+  // Obtiene un TreeNode a partir de un commit
   public async getTree(ref: string): Promise<TreeNode> {
     const root = new TreeNode('');
     const { data } = await this.octokit.git.getTree({
@@ -139,6 +125,7 @@ export default class GitModel {
     return root;
   }
 
+  // Obtiene lof ficheros afectados por un commit
   public async getCommitFiles(ref: string) {
     try {
       const commit = await this.octokit.repos.getCommit({
@@ -151,6 +138,8 @@ export default class GitModel {
       console.error(error);
     }
   }
+
+  // Obtiene los pull requests asociados a un commit
   public async getCommitPullRequests(commit_sha: string) {
     try {
       const commit = await this.octokit.repos.listPullRequestsAssociatedWithCommit({
@@ -166,20 +155,18 @@ export default class GitModel {
 
 
   public async showData() {
-    const logManager = new GitModel();
-
-    logManager.getCommits().then(commit => {
-      commit.data.forEach(element => {
+    this.getCommits().then(commit => {
+      commit.forEach(element => {
         var commitInfo: string = "\n------------------COMMIT-------------------------\n";
         commitInfo = commitInfo + "Author: " + element.author?.login + "\n";
         commitInfo = commitInfo + "\nMessage:" + element.commit.message.split("\n")[0] + "\n";
-        logManager.getCommitPullRequests(element.sha).then(allPullRequests => {
+        this.getCommitPullRequests(element.sha).then(allPullRequests => {
           commitInfo = commitInfo + "\nPull requests:\n";
           allPullRequests?.forEach(x => {
             commitInfo = commitInfo + (x.title + "\n");
             commitInfo = commitInfo + ("Date: " + x.merged_at + "\n");
           });
-          logManager.getCommitFiles(element.sha).then(allFiles => {
+          this.getCommitFiles(element.sha).then(allFiles => {
             commitInfo = commitInfo + "\nFiles:\n";
             allFiles?.forEach(file => {
               commitInfo = commitInfo + file.filename + "([" + file.status + "] +:" + file.additions + " -:" + file.deletions + " x:" + file.changes + ")" + "\n";

@@ -10,23 +10,22 @@ export class GitScapeController {
   private gitScapeModel: GitScapeModel;
   directory!: Directory;
 
-  constructor(dataModel: GitScapeModel, view: GitScapeView) {
-    this.gitScapeModel = dataModel;
-    this.gitModel = dataModel.gitModel;
+  constructor(gitScapeModel: GitScapeModel, view: GitScapeView) {
+    this.gitScapeModel = gitScapeModel;
+    this.gitModel = gitScapeModel.gitModel;
     this.gitScapeView = view;
     this.gitScapeView.initialize();
 
+
     this.gitModel.initialize().then(() => {
-      console.log("first commit:" + this.gitModel.getFirstCommit().commit.author.date);
-      console.log("last commit:" + this.gitModel.getLastCommit().commit.author.date);
       this.gitScapeView.createSliderDateEventsListener();
     });
 
-    this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
-      this.directory = this.gitModel.getDirectory(root);
+    // this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
+    //   this.directory = this.gitModel.getDirectory(root);
 
-      this.gitScapeView.createDirectoryView(this.directory, 0, 0);
-    });
+    //   this.gitScapeView.createDirectoryView(this.directory, 0, 0);
+    // });
     document.addEventListener('keydown', (event) => {
       if (event.code === 'Space') {
         this.animateCommits();

@@ -7,9 +7,9 @@ import { GitScapeController } from './GitScapeController';
 
 
 const gitModel = new GitModel();
-const dataModel = new GitScapeModel(gitModel);
+const gitScapeModel = new GitScapeModel(gitModel);
 const view = new GitScapeView("app", gitModel);
-new GitScapeController(dataModel, view);
+new GitScapeController(gitScapeModel, view);
 
 
 
