@@ -1,15 +1,19 @@
 import './style.css'
+import { ModelImpl } from './Model';
+import ViewImpl from './View';
+import { ControllerImpl } from './Controller';
 
-import { GitScapeModel } from './GitScapeModel';
-import GitModel from './GitModel';
-import GitScapeView from './GitScapeView';
-import { GitScapeController } from './GitScapeController';
+const controller = new ControllerImpl();
+const view = new ViewImpl();
+const model = new ModelImpl();
+
+view.setModel(model);
+view.setController(controller);
+controller.setModel(model);
+controller.setView(view);
+controller.initialize();
 
 
-const gitModel = new GitModel();
-const dataModel = new GitScapeModel(gitModel);
-const view = new GitScapeView("app", gitModel);
-new GitScapeController(dataModel, view);
 
 
 
