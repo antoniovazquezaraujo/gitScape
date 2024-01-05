@@ -1,55 +1,55 @@
 import { Model } from './Model';
-import { Directory } from './Model';
 import View from "./View";
 
 // Controlador
-export class Controller {
-  private view: View;
-  public model: Model;
-  directory!: Directory;
+export interface Controller {
+  commitAnimationFinished(): unknown;
+  initialize(): void;
+  commitIndexChanged(index: number): void;
+  startSelected(): void;
+  stopSelected(): void;
+}
+export class ControllerImpl implements Controller {
+  private view!: View;
+  private model!: Model;
+  private looping = false;
 
-  constructor(view: View) {
-    this.model = view.model;
-    this.model.initialize();
-    this.view = view;
-    this.view.initialize();
-
-
-    this.model.initialize().then(() => {
-      this.view.createSliderDateEventsListener();
-    });
-
-    // this.gitModel.getTree('7cd7dd736c253073b4a0f9cc0895d1e37ac398ca').then(root => {
-    //   this.directory = this.gitModel.getDirectory(root);
-
-    //   this.gitScapeView.createDirectoryView(this.directory, 0, 0);
-    // });
-    document.addEventListener('keydown', (event) => {
-      if (event.code === 'Space') {
-        this.animateCommits();
-      }
-    });
-    // window.addEventListener('keydown', (event) => {
-    //   if (event.key === 't') { // Cambia 't' a la tecla que quieras
-    //     this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/java/Prueba.java', true);
-    //     this.gitScapeModel.addPathToDirectory(this.directory, 'src/main/antlr4/pruebas', false);
-    //     this.gitScapeModel.removeElementFromDirectory(this.directory, 'src/main/java/letrain/command/CommandManager.java');
-    //     this.gitScapeModel.removeElementFromDirectory(this.directory, '.idea');
-    //     this.gitScapeView.clearScene();
-    //     this.gitScapeView.createDirectoryView(this.directory, 0, 0);
-    //   }
-    // });
-    this.view.animate();
+  public setModel(model: Model) {
+    this.model = model;
   }
-  async animateCommits() {
-    const slider = document.getElementById('slider') as HTMLInputElement;
-    var commitIndex = parseInt(slider.value, 10);
-    while (commitIndex < this.model.allCommits.length) {
-      await this.view.animateCommit(this.model.allCommits[commitIndex]);
-      commitIndex++;
+
+  public setView(view: View) {
+    this.view = view;
+  }
+
+  initialize(): void {
+    this.model.initialize();
+    this.view.initialize();
+  }
+
+  commitIndexChanged(index: number): void {
+    this.view.setStopped();
+    this.model.setCommitIndex(index);
+    this.model.reloadDirectory();
+  }
+  startSelected(): void {
+    this.looping = true;
+    this.view.setStarted();
+    let commitIndex = this.model.getCommitCount() - 1;
+    this.model.setCommitIndex(commitIndex);
+    this.nextSelected();
+  }
+  nextSelected(): void {
+    let commitIndex = this.model.getCommitIndex();
+    if (this.looping && commitIndex > 0) {
+      this.model.setCommitIndex(--commitIndex);
     }
   }
-
-
-
+  stopSelected(): void {
+    this.looping = false;
+    this.view.setStopped();
+  }
+  commitAnimationFinished(): void {
+    this.nextSelected();
+  }
 }

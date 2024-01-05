@@ -3,31 +3,19 @@ import { Text } from 'troika-three-text';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Easing, Tween } from '@tweenjs/tween.js';
 
-import { Directory, Model } from './Model';
+import { Directory, Model, EventType } from './Model';
+import { Controller } from './Controller';
 
-export default class View {
-  public scene: THREE.Scene | undefined;
-  public camera: THREE.PerspectiveCamera | undefined;
-  public renderer: THREE.WebGLRenderer | undefined;
-  private controls: OrbitControls | undefined;
-  private fov: number;
-  private nearPlane: number;
-  private farPlane: number;
-  private canvasId: string;
-  public model: Model;
-  elements: { [path: string]: THREE.Mesh } = {};
-  tween: Tween<THREE.Vector3>;
-  ambientLight: THREE.AmbientLight;
+interface View {
+  update(): void; // Actualiza la vista
+  setStarted(): void;
+  setStopped(): void;
+  onStartSelected(): void; // Inicia el recorrido por los commits
+  onStopSelected(): void; // Detiene el recorrido por los commits
+  onSliderChanged(index: number): void; // El usuario mueve el slider, se avisa al modelo y luego el modelo nos avisa del cambio con update
+}
 
-  programmers: {
-    [programmer: string]: {
-      lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
-      spotLight: THREE.SpotLight,
-      label: Text
-    }
-  } = {};
-
-
+export default class ViewImpl implements View {
   private readonly directoryColor = 0x999999;
   private readonly fileColor = 0xffffff;
   private readonly fileBorderColor = 0x999999;
@@ -36,28 +24,105 @@ export default class View {
   private readonly horizontalLineColor = 0x999999;
   private readonly verticalLineColor = 0x999999;
 
-  constructor(model: Model) {
+  private scene!: THREE.Scene;
+  private camera!: THREE.PerspectiveCamera;
+  private renderer!: THREE.WebGLRenderer | undefined;
+  private tween!: Tween<THREE.Vector3>;
+  private controls: OrbitControls | undefined;
+  private model!: Model;
+  private elements: { [path: string]: THREE.Mesh } = {};
+  private ambientLight!: THREE.AmbientLight;
+  private slider!: HTMLInputElement;
+  private dateInput!: HTMLInputElement;
+  private controller!: Controller;
+  private started: boolean = false;
+
+  private programmers: {
+    [programmer: string]: {
+      lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
+      spotLight: THREE.SpotLight,
+      label: Text
+    }
+  } = {};
+  treeGroup: THREE.Group<THREE.Object3DEventMap>;
+
+  public setModel(model: Model) {
     this.model = model;
-    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    this.tween = new Tween(new THREE.Vector3(0, 0, 0));
-    this.fov = 45;
-    this.nearPlane = 1;
-    this.farPlane = 1000;
-    this.canvasId = "app";
-    this.initialize();
+  }
+  public setController(controller: any) {
+    this.controller = controller;
   }
 
   async initialize(): Promise<void> {
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(
-      this.fov,
-      window.innerWidth / window.innerHeight,
-      this.nearPlane,
-      this.farPlane
-    );
-    this.camera.position.z = 10;
+    this.createScene();
+    this.createCamera();
+    this.createLights();
+    this.createTween();
+    this.createRenderer();
+    this.createOrbitControls();
+    this.createSlider();
+    this.createDateInput();
+    this.addEventListeners();
+    this.animate();
+  }
+  public setStarted(): void {
+    this.started = true;
+  }
+  public setStopped(): void {
+    this.started = false;
+  }
+  private addEventListeners() {
+    this.model.onChange(EventType.DirectoryChange, () => this.onDirectoryChange());
+    this.model.onChange(EventType.RepositoryChange, () => this.onRepositoryChange());
+    this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
 
-    const canvas = document.getElementById(this.canvasId);
+    this.slider.addEventListener('input', () => {
+
+      const commitIndex = parseInt(this.slider.max, 10) - parseInt(this.slider.value, 10);
+      this.onSliderChanged(commitIndex);
+    });
+    window.addEventListener('resize', () => this.onWindowResize(), false);
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space') {
+        if (!this.started) {
+          this.started = true;
+          this.onStartSelected();
+        } else {
+          this.started = false;
+          this.onStopSelected();
+        }
+      }
+    });
+  }
+
+  private async onCurrentCommitChange() {
+    if (this.started) {
+      await this.animateCommit(this.model.getCurrentCommit());
+    }
+  }
+  private onDirectoryChange() {
+    this.clearScene();
+    this.createDirectoryView(this.model.getDirectory(), 0, 0);
+  }
+  private onRepositoryChange() {
+    this.slider.max = (this.model.getCommitCount() - 1).toString();
+    this.clearScene();
+    this.createDirectoryView(this.model.getDirectory(), 0, 0);
+  }
+  private createSlider() {
+    this.slider = document.getElementById('slider') as HTMLInputElement;
+  }
+  private createDateInput() {
+    this.dateInput = (document.getElementById('datetime') as HTMLInputElement);
+  }
+
+  private createScene() {
+    this.scene = new THREE.Scene();
+    this.treeGroup = new THREE.Group();
+  }
+
+  private createRenderer() {
+    const canvas = document.getElementById("app");
     if (canvas instanceof HTMLCanvasElement) {
       this.renderer = new THREE.WebGLRenderer({
         canvas,
@@ -65,32 +130,136 @@ export default class View {
       });
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(this.renderer.domElement);
-
-      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-
-      this.scene.add(this.ambientLight);
-      window.addEventListener('resize', () => this.onWindowResize(), false);
     }
   }
 
+  private createOrbitControls() {
+    this.controls = new OrbitControls(this.camera, this.renderer!.domElement);
+  }
+  private createLights() {
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    this.scene.add(this.ambientLight);
+  }
+
+  private createCamera() {
+    const fov = 45;
+    const nearPlane = 1;
+    const farPlane = 1000;
+    this.camera = new THREE.PerspectiveCamera(
+      fov,
+      window.innerWidth / window.innerHeight,
+      nearPlane,
+      farPlane
+    );
+    this.camera.position.z = 10;
+  }
+
+  private createTween() {
+    this.tween = new Tween(new THREE.Vector3(0, 0, 0));
+  }
+
+  onWindowResize(): void {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer!.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  update(): void {
+    this.clearScene();
+    this.createDirectoryView(this.model.getDirectory(), 0, 0);
+    const datetime = this.model.getCurrentCommit().author.date;
+    this.dateInput.value = datetime.toLocaleString();
+  }
+
+  onStartSelected(): void {
+    this.controller.startSelected();
+  }
+  onStopSelected(): void {
+    this.controller.stopSelected();
+  }
+  onSliderChanged(commitIndex: number): void {
+    this.controller.commitIndexChanged(commitIndex);
+  }
+
+  animate(): void {
+    window.requestAnimationFrame(() => this.animate());
+    this.controls!.update();
+    this.tween.update();
+    this.renderer!.render(this.scene!, this.camera!);
+  }
+
+  async animateCommit(commit: any) {
+    const programmer = commit.commit.author.email;
+
+    if (!this.programmers[programmer]) {
+      const label = new Text();
+      label.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
+      label.fontSize = 0.1;
+      label.color = 0xff0066; // Cambia esto al color que desees
+      label.anchorX = 'center';
+      label.position.y = 0.1; // Ajusta esto para cambiar la posición de la etiqueta sobre la esfera
+      label.sync();
+      this.scene!.add(label);
+
+      const sphereGeometry = new THREE.SphereGeometry(0.1, 10, 10);
+      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+      const lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      this.scene!.add(lightSphere);
+      const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
+      this.scene!.add(spotLight);
+      this.programmers[programmer] = {
+        lightSphere,
+        spotLight,
+        label
+      };
+    }
+    await this.moveProgrammerToWorkOrbit(programmer).then(() => {
+      this.model.getCommitFiles(commit.sha).then(async (files) => {
+        for (const file of files!) {
+          if (file.status === 'added') {
+            await this.model.addFileOrDirectory(commit.sha, file);
+            console.log("added", file);
+          } else if (file.status === 'removed') {
+            this.model.removeElement(file.filename);
+          }
+          const fileObject = this.elements[file.filename];
+          if (fileObject) {
+            await this.moveProgrammerTo(programmer, fileObject.parent!.position);
+            await this.makeFileGlow(fileObject);
+          }
+        }
+      }).then(() => {
+        this.moveProgrammerToWaitOrbit(programmer)
+          .then(() => {
+            this.controller.commitAnimationFinished();
+          });
+      });
+    });
+  }
+
   public async clearScene() {
+    this.scene!.remove(this.treeGroup);
+    this.treeGroup = new THREE.Group();
     for (let i = this.scene!.children.length - 1; i >= 0; i--) {
       const object = this.scene!.children[i];
       if (!(object instanceof THREE.Camera) && !(object instanceof THREE.Light)) {
-        this.scene!.remove(object);
+        // this.scene!.remove(object);
       }
     }
   }
   public createDirectoryView(directory: Directory, subLevel: number, xPosition: number) {
     const spacing = 0.5;
+    
     const dirX = xPosition;
     const dirY = subLevel * spacing;
     const horizontalLineShift = 2;
     const elementWidth = 1.5;
     const elementHeight = 0.5;
     // Directory group
-    const dirGroup = new THREE.Group();
 
+    this.scene!.add(this.treeGroup);
+    const dirGroup = new THREE.Group();
+    this.treeGroup.add(dirGroup);
     // Directory cube
     const geometry = new THREE.BoxGeometry(elementWidth, elementHeight, 0.05);
     const material = new THREE.MeshLambertMaterial({ color: this.directoryColor });
@@ -110,7 +279,7 @@ export default class View {
     dirGroup.add(dirText);
 
     dirGroup.position.set(dirX, dirY, 0);
-    this.scene!.add(dirGroup);
+    // this.scene!.add(dirGroup);
 
     // Line up to the parent directory
     const points = [];
@@ -119,14 +288,15 @@ export default class View {
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: this.horizontalLineColor });
     const line = new THREE.Line(lineGeometry, lineMaterial);
-    this.scene!.add(line);
+    this.treeGroup.add(line);
+    // this.scene!.add(line);
 
     const filesGroup = new THREE.Group();
     // Files of this directory
     directory.files.forEach((file: any, index: any) => {
       // File group
       const fileGroup = new THREE.Group();
-
+      this.treeGroup.add(fileGroup);
       // The file cube
       const fileGeometry = new THREE.BoxGeometry(elementWidth, .5, .2);
       const fileMaterial = new THREE.MeshLambertMaterial({
@@ -159,7 +329,7 @@ export default class View {
         fileText.fontSize = 0.1;
         fileText.color = this.fileTextColor;
         fileText.anchorX = 'center';
-        fileText.position.z = 0.2;
+        fileText.position.z = 0.15;
         fileText.position.y = 0.15 + (-i * 0.15); // Ajusta la posición y para cada línea
         fileText.sync();
         fileGroup.add(fileText);
@@ -178,7 +348,8 @@ export default class View {
         }
       });
     });
-    this.scene!.add(filesGroup);
+    // this.scene!.add(filesGroup);
+    this.treeGroup.add(filesGroup)
 
     // The subdirectories of this directory
     var lastLevel = subLevel * spacing;
@@ -192,50 +363,17 @@ export default class View {
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const lineMaterial = new THREE.LineBasicMaterial({ color: this.verticalLineColor });
       const line = new THREE.Line(lineGeometry, lineMaterial);
-      this.scene!.add(line);
+      // this.scene!.add(line);
+      this.treeGroup.add(line);
 
       // Render the subdirectory
       subLevel = this.createDirectoryView(subdirectory, subLevel - 1, xPosition + 2);
     };
     return subLevel;
   }
-  animate(): void {
-    if (this.renderer && this.camera) { //&& this.stats && this.controls) {
-      window.requestAnimationFrame(() => this.animate());
-      this.renderer.render(this.scene!, this.camera);
-      this.controls!.update();
-      this.tween.update();
-    }
-  }
 
 
-  onWindowResize(): void {
-    if (this.camera && this.renderer) {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-  }
 
-  public createSliderDateEventsListener() {
-    const slider = document.getElementById('slider') as HTMLInputElement;
-    slider.max = (this.model.allCommits.length - 1).toString();
-    slider.addEventListener('input', async (event) => {
-      const slider = event.target as HTMLInputElement;
-      const commitIndex = parseInt(slider.value, 10);
-      this.model.setCommitIndex(commitIndex);
-      this.model.reloadDirectory();
-      const directory1 = this.model.getDirectory();
-      const commit = this.model.getCurrentCommit();
-
-      if (commit) {
-        const datetime = new Date(commit.commit.author.date);
-        (document.getElementById('datetime') as HTMLInputElement).value = datetime.toLocaleString();
-        this.clearScene();
-        this.createDirectoryView(directory1!, 0, 0);
-      }
-    });
-  }
 
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
@@ -279,46 +417,6 @@ export default class View {
         .start();
     });
   }
-  async animateCommit(commit: any) {
-
-    const programmer = commit.commit.author.email;
-
-    if (!this.programmers[programmer]) {
-      const label = new Text();
-      label.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
-      label.fontSize = 0.1;
-      label.color = 0xff0066; // Cambia esto al color que desees
-      label.anchorX = 'center';
-      label.position.y = 0.1; // Ajusta esto para cambiar la posición de la etiqueta sobre la esfera
-      label.sync();
-      this.scene!.add(label);
-
-      const sphereGeometry = new THREE.SphereGeometry(0.1, 10, 10);
-      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-      const lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      this.scene!.add(lightSphere);
-      const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
-      this.scene!.add(spotLight);
-      this.programmers[programmer] = {
-        lightSphere,
-        spotLight,
-        label
-      };
-    }
-    await this.moveProgrammerToWorkOrbit(programmer);
-    await this.model.getCommitFiles(commit.sha).then(async (files) => {
-      for (const file of files!) {
-        const fileObject = this.elements[file.filename];
-        if (fileObject) {
-          // await this.moveDirectionalLightTo(fileObject.parent!.position);
-          await this.moveProgrammerTo(programmer, fileObject.parent!.position);
-          await this.makeFileGlow(fileObject);
-        }
-      }
-    });
-    await this.moveProgrammerToWaitOrbit(programmer);
-  }
-
 
   async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3) {
     const startPosition = this.programmers[programmer].lightSphere.position.clone();

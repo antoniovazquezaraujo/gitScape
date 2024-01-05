@@ -1,9 +1,19 @@
 import './style.css'
-import { Model } from './Model';
-import View from './View';
-import { Controller } from './Controller';
+import { ModelImpl } from './Model';
+import ViewImpl from './View';
+import { ControllerImpl } from './Controller';
 
-new Controller(new View(new Model()));
+const controller = new ControllerImpl();
+const view = new ViewImpl();
+const model = new ModelImpl();
+
+view.setModel(model);
+view.setController(controller);
+controller.setModel(model);
+controller.setView(view);
+controller.initialize();
+
+
 
 
 

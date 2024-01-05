@@ -1,57 +1,193 @@
 import { Octokit } from '@octokit/rest';
 
-export class Model {
+export enum EventType {
+  RepositoryChange = 'repositoryChange',
+  DirectoryChange = 'directoryChange',
+  CurrentCommitChange = 'currentCommitChange'
+}
+export interface Model {
+  initialize(): void;
 
-  githubToken: string;
-  octokit: Octokit;
-  owner: string;
-  repo: string;
-  allCommits: any[] = [];
-  directory: Directory | undefined;
-  commitIndex: number = 0;
+  // notificamos de cambio de repositorio, directorio y commit
+  onChange(eventType: EventType, callback: () => void): void;
+  notifyObservers(eventType: EventType): void;
 
-  public constructor() {
+  reloadDirectory(): void;
+  setCommitIndex(index: number): void;
+  getCommitIndex(): number;
+  getCommit(index: number): any;
+  getFirstCommit(): any;
+  getLastCommit(): any;
+  getCurrentCommit(): any;
+  getCommitCount(): number;
+  getCurrentCommitDate(): Date;
+  getCommitFiles(ref: string): Promise<any>;
+  getFileInfo(file: any): any;
+  getDirectory(): Directory;
+  addElement(path: string, isFile: boolean): void;
+  addFileOrDirectory(commitSha: string, file: any): void;
+  removeElement(path: string): void;
+}
+
+export class ModelImpl implements Model {
+  private githubToken!: string;
+  private octokit!: Octokit;
+  private owner!: string;
+  private repo!: string;
+  private allCommits: any[] = [];
+  private directory: Directory | undefined;
+  private commitIndex: number = 0;
+  private observers: { [key in EventType]?: (() => void)[] } = {};
+
+  constructor() {
+    this.observers = {};
+    this.directory = new Directory('');
+  }
+  onChange(eventType: EventType, callback: () => void): void {
+    if (!this.observers[eventType]) {
+      this.observers[eventType] = [];
+    }
+    if (this.observers[eventType]) {
+      this.observers[eventType]?.push(callback);
+    }
+  }
+
+  notifyObservers(eventType: EventType): void {
+    if (this.observers[eventType]) {
+      for (const observer of this.observers[eventType]!) {
+        observer();
+      }
+    }
+  }
+
+  public async initialize() {
+    this.createOctokit();
+    await this.reloadAllRepositoryCommits();
+    this.loadInitialEmptyDirectory();
+    this.setCommitIndex(0);
+  }
+
+  public loadInitialEmptyDirectory() {
+    this.directory = new Directory('');
+    this.notifyObservers(EventType.DirectoryChange);
+  }
+  public reloadDirectory() {
+    this.getTreeAtCommit(this.allCommits[this.commitIndex].sha).then(treeNode => {
+      this.directory = this.createDirectory(treeNode, null);
+      this.notifyObservers(EventType.DirectoryChange);
+    });
+  }
+
+  private createOctokit(): void {
     this.githubToken = import.meta.env.VITE_GITHUB_TOKEN;
     this.octokit = new Octokit({
       auth: this.githubToken,
     });
     this.owner = 'antoniovazquezaraujo';
-    this.repo = 'LeTrain';
+    this.repo = 'letrain';
   }
 
-  public async initialize() {
-    return this.reloadAllCommits();
+  public setCommitIndex(index: number) {
+    this.commitIndex = index;
+    this.notifyObservers(EventType.CurrentCommitChange);
+  }
+  public getCommitIndex(): number {
+    return this.commitIndex;
   }
 
-  // obtiene todos los commits de un repositorio, si ya se han obtenido previamente, los devuelve
-  public async getAllCommits() {
-    if (this.allCommits == undefined) {
-      await this.reloadAllCommits();
-    }
-    return this.allCommits;
+  public getCommit(index: number) {
+    return this.allCommits[index];
   }
-  public reloadDirectory() {
-    this.getTreeAtCommit(this.allCommits[this.commitIndex].sha).then(treeNode => {
-      this.directory = this.createDirectory(treeNode, null);;
-    });
+  public getFirstCommit() {
+    return this.allCommits[this.allCommits.length - 1];
   }
-  // Obtiene una estructura de Directory a partir de un TreeNode
-  public getDirectory(): Directory | undefined {
-    if (this.directory == undefined) {
-      this.reloadDirectory();
-    }
-    return this.directory;
-  }
-  public setCommitIndex(commitIndex: number) {
-    this.commitIndex = commitIndex;
+  public getLastCommit() {
+    return this.allCommits[0];
   }
   public getCurrentCommit() {
     return this.allCommits[this.commitIndex];
   }
-  ///////////////////////////////////////////////////
+  public getCommitCount(): number {
+    return this.allCommits.length;
+  }
+  public getCurrentCommitDate(): Date {
+    return new Date(this.allCommits[this.commitIndex].commit.author.date);
+  }
+  public async getFileInfo(filename: string): Promise<any> {
+    const files = await this.getCommitFiles(this.getCurrentCommit())
+    const file = await files.find((f: any) => f.filename === filename);
+    if (file) {
+      return file;
+    }
+    return null;
+  }
+  // Obtiene una estructura de Directory a partir de un TreeNode
+  public getDirectory(): Directory {
+    return this.directory!;
+  }
+  public async addFileOrDirectory(commitSha: string, file: any): Promise<void> {
+    const treeNode = await this.getTreeAtCommit(commitSha);
+    const found = treeNode.find(file.filename);
+    if (found) {
+      if (found.isFile) {
+        this.addElement(file.filename, true);
+      } else {
+        this.addElement(file.filename, false);
+      }
+    }
+  }
 
+  public addElement(path: string, isFile: boolean): void {
+    const pathComponents = path.split('/');
+    let currentDirectory = this.directory!;
+
+    for (let i = 0; i < pathComponents.length - 1; i++) {
+      const subdirectoryName = pathComponents[i];
+      let subdirectory = currentDirectory.subdirectories.find(d => d.name === subdirectoryName);
+      if (!subdirectory) {
+        subdirectory = new Directory(subdirectoryName, currentDirectory);
+        currentDirectory.subdirectories.push(subdirectory);
+      }
+      currentDirectory = subdirectory;
+    }
+
+    const newNodeName = pathComponents[pathComponents.length - 1];
+    const newNode = new TreeNode(newNodeName, isFile, {});
+    if (isFile) {
+      if (!currentDirectory.files.find(f => f === newNode.name)) {
+        currentDirectory.files.push(newNode.name);
+      }
+    } else {
+      if (!currentDirectory.subdirectories.find(d => d.name === newNode.name)) {
+        const newSubdirectory = this.createDirectory(newNode, currentDirectory);
+        currentDirectory.subdirectories.push(newSubdirectory);
+      }
+    }
+    this.notifyObservers(EventType.DirectoryChange);
+  }
+  public removeElement(path: string): void {
+    const parentPath = path.substring(0, path.lastIndexOf('/'));
+    const elementName = path.substring(path.lastIndexOf('/') + 1);
+    const directory = this.findDirectoryByPath(this.directory!, parentPath);
+    if (directory) {
+      let index = directory.files.indexOf(elementName);
+      if (index !== -1) {
+        directory.files.splice(index, 1);
+      } else {
+        for (let i = 0; i < directory.subdirectories.length; i++) {
+          if (directory.subdirectories[i].name === elementName) {
+            directory.subdirectories.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+    this.notifyObservers(EventType.DirectoryChange);
+  }
+
+  ////////////////// IMPLEMENTATION /////////////////////////////////
   // obtiene todos los commits de un repositorio
-  private async reloadAllCommits(): Promise<any[]> {
+  private async reloadAllRepositoryCommits(): Promise<void> {
     const perPage = 100; // Máximo permitido por la API de GitHub
     let page = 1;
     this.allCommits = [];
@@ -70,8 +206,13 @@ export class Model {
       }
       page++;
     }
+    this.notifyObservers(EventType.RepositoryChange);
+  }
+
+  private async getAllCommits() {
     return this.allCommits;
   }
+
 
   // Obtiene un TreeNode a partir de un commit
   private async getTreeAtCommit(ref: string): Promise<TreeNode> {
@@ -115,37 +256,6 @@ export class Model {
     return directory;
   }
 
-  public addElementToDirectory(root: Directory, path: string, element: TreeNode): void {
-    const directory = this.findDirectoryByPath(root, path);
-    if (directory) {
-      if (element.isFile) {
-        directory.files.push(element.name);
-      } else {
-        const subdirectory = this.createDirectory(element, directory);
-        directory.subdirectories.push(subdirectory);
-      }
-    }
-  }
-
-  public removeElementFromDirectory(root: Directory, path: string): void {
-    const parentPath = path.substring(0, path.lastIndexOf('/'));
-    const elementName = path.substring(path.lastIndexOf('/') + 1);
-    const directory = this.findDirectoryByPath(root, parentPath);
-    if (directory) {
-      let index = directory.files.indexOf(elementName);
-      if (index !== -1) {
-        directory.files.splice(index, 1);
-      } else {
-        for (let i = 0; i < directory.subdirectories.length; i++) {
-          if (directory.subdirectories[i].name === elementName) {
-            directory.subdirectories.splice(i, 1);
-            break;
-          }
-        }
-      }
-    }
-  }
-
   private findDirectoryByPath(root: Directory, path: string): Directory | null {
     const parts = path.split('/');
     let currentDirectory = root;
@@ -165,70 +275,9 @@ export class Model {
     return currentDirectory;
   }
 
-  public addPathToDirectory(directory: Directory, path: string, isFile: boolean): Directory {
-    const pathComponents = path.split('/');
-    let currentDirectory = directory;
-
-    for (let i = 0; i < pathComponents.length - 1; i++) {
-      const subdirectoryName = pathComponents[i];
-      let subdirectory = currentDirectory.subdirectories.find(d => d.name === subdirectoryName);
-      if (!subdirectory) {
-        subdirectory = new Directory(subdirectoryName, currentDirectory);
-        currentDirectory.subdirectories.push(subdirectory);
-      }
-      currentDirectory = subdirectory;
-    }
-
-    const newNodeName = pathComponents[pathComponents.length - 1];
-    const newNode = new TreeNode(newNodeName, isFile, {});
-    if (isFile) {
-      if (!currentDirectory.files.find(f => f === newNode.name)) {
-        currentDirectory.files.push(newNode.name);
-      }
-    } else {
-      if (!currentDirectory.subdirectories.find(d => d.name === newNode.name)) {
-        const newSubdirectory = this.createDirectory(newNode, currentDirectory);
-        currentDirectory.subdirectories.push(newSubdirectory);
-      }
-    }
-
-    return directory;
-  }
-
-
-
-
-  // // obtiene el primer commit de un repositorio
-  // getFirstCommit(): any {
-  //   return this.allCommits[this.allCommits.length - 1];
-  // }
-
-  // // obtiene el último commit de un repositorio
-  // getLastCommit(): any {
-  //   return this.allCommits[0];
-  // }
-
-  public findPathInTreeNode(path: string, treeNode: TreeNode): TreeNode | null {
-    console.log(path);
-    const parts = path.split('/');
-    console.log(parts);
-    let currentNode = treeNode;
-    for (const part of parts) {
-      if (part in currentNode.children) {
-        currentNode = currentNode.children[part];
-      } else {
-        return null;
-      }
-    }
-    return currentNode;
-  }
-
-
-
-
 
   // Obtiene lof ficheros afectados por un commit
-  public async getCommitFiles(ref: string) {
+  public async getCommitFiles(ref: string): Promise<any> {
     try {
       const commit = await this.octokit.repos.getCommit({
         owner: this.owner,
@@ -255,30 +304,6 @@ export class Model {
     }
   }
 
-
-  public async showData() {
-    this.getAllCommits().then(commit => {
-      commit.forEach(element => {
-        var commitInfo: string = "\n------------------COMMIT-------------------------\n";
-        commitInfo = commitInfo + "Author: " + element.author?.login + "\n";
-        commitInfo = commitInfo + "\nMessage:" + element.commit.message.split("\n")[0] + "\n";
-        this.getCommitPullRequests(element.sha).then(allPullRequests => {
-          commitInfo = commitInfo + "\nPull requests:\n";
-          allPullRequests?.forEach(x => {
-            commitInfo = commitInfo + (x.title + "\n");
-            commitInfo = commitInfo + ("Date: " + x.merged_at + "\n");
-          });
-          this.getCommitFiles(element.sha).then(allFiles => {
-            commitInfo = commitInfo + "\nFiles:\n";
-            allFiles?.forEach(file => {
-              commitInfo = commitInfo + file.filename + "([" + file.status + "] +:" + file.additions + " -:" + file.deletions + " x:" + file.changes + ")" + "\n";
-            });
-            console.log("\n" + commitInfo + "\n");
-          });
-        });
-      });
-    });
-  }
 }
 
 export class TreeNode {
@@ -290,6 +315,18 @@ export class TreeNode {
     this.name = name;
     this.children = children;
     this.isFile = isFile;
+  }
+  find(path: string): TreeNode | null {
+    const parts = path.split('/');
+    let currentNode: TreeNode | null = this;
+    for (const part of parts) {
+      if (part in currentNode.children) {
+        currentNode = currentNode.children[part];
+      } else {
+        return null;
+      }
+    }
+    return currentNode;
   }
 }
 
