@@ -43,7 +43,8 @@ export default class ViewImpl implements View {
     [programmer: string]: {
       lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
       spotLight: THREE.SpotLight,
-      label: Text
+      programmerText: Text,
+      commitText: Text
     }
   } = {};
 
@@ -85,8 +86,7 @@ export default class ViewImpl implements View {
     this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
 
     this.slider.addEventListener('input', () => {
-
-      const commitIndex = parseInt(this.slider.max, 10) - parseInt(this.slider.value, 10);
+      const commitIndex = parseInt(this.slider.value, 10);
       this.onSliderChanged(commitIndex);
     });
     window.addEventListener('resize', () => this.onWindowResize(), false);
@@ -109,12 +109,12 @@ export default class ViewImpl implements View {
       const pullRequest = this.model.getPullRequestForCommit(currentCommit.sha);
       if (pullRequest && !this.visiblePullRequests.has(pullRequest.number)) {
         this.visiblePullRequests.add(pullRequest.number);
-        console.log("current commit: ", currentCommit.commit.message, " Pull request: ", pullRequest.title);
-
       }
-      console.log("current commit: ", currentCommit.commit.message, " Pull request: ", pullRequest ? pullRequest.title : "-");
       await this.animateCommit(currentCommit);
     }
+    this.slider.value = this.model.getCommitIndex().toString();
+    const datetime = this.model.getCurrentCommit().commit.author.date;
+    this.dateInput.value = datetime.toLocaleString();
   }
   private onDirectoryChange() {
     this.clearScene();
@@ -208,14 +208,23 @@ export default class ViewImpl implements View {
     const programmer = commit.commit.author.email;
 
     if (!this.programmers[programmer]) {
-      const label = new Text();
-      label.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
-      label.fontSize = 0.1;
-      label.color = 0xff0066; // Cambia esto al color que desees
-      label.anchorX = 'center';
-      label.position.y = 0.1; // Ajusta esto para cambiar la posición de la etiqueta sobre la esfera
-      label.sync();
-      this.scene!.add(label);
+      const programmerLabel = new Text();
+      programmerLabel.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
+      programmerLabel.fontSize = 0.1;
+      programmerLabel.color = 0xff0066; // Cambia esto al color que desees
+      programmerLabel.anchorX = 'center';
+      programmerLabel.position.y = 0.1; // Ajusta esto para cambiar la posición de la etiqueta sobre la esfera
+      programmerLabel.sync();
+      this.scene!.add(programmerLabel);
+
+      const commitLabel = new Text();
+      commitLabel.text = "";
+      commitLabel.fontSize = 0.1;
+      commitLabel.color = 0xff0066;
+      commitLabel.anchorX = 'center';
+      commitLabel.position.y = -0.3;
+      commitLabel.sync();
+      this.scene!.add(commitLabel);
 
       const sphereGeometry = new THREE.SphereGeometry(0.1, 10, 10);
       const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
@@ -224,18 +233,18 @@ export default class ViewImpl implements View {
       const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
       this.scene!.add(spotLight);
       this.programmers[programmer] = {
-        lightSphere,
-        spotLight,
-        label
+        lightSphere: lightSphere,
+        spotLight: spotLight,
+        programmerText: programmerLabel,
+        commitText: commitLabel
       };
     }
+    this.programmers[programmer].commitText.text = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
       this.model.getCommitFiles(commit.sha).then(async (files) => {
         for (const file of files!) {
           if (file.status === 'added') {
             await this.model.addFileOrDirectory(commit.sha, file);
-          } else if (file.status === 'removed') {
-            await this.model.removeElement(file.filename);
           }
           const fileObject = this.elements[file.filename];
           if (fileObject) {
@@ -243,7 +252,10 @@ export default class ViewImpl implements View {
             await this.moveProgrammerTo(programmer, fileObject.parent!.position);
             await this.makeFileGlow(fileObject);
           }
+        if (file.status === 'removed') {
+          this.model.removeElement(file.filename);
         }
+      }
       }).then(() => {
         this.moveProgrammerToWaitOrbit(programmer)
           .then(() => {
@@ -258,7 +270,7 @@ export default class ViewImpl implements View {
     this.treeGroup = new THREE.Group();
     this.scene!.add(this.treeGroup);
   }
-  public createDirectoryView(group: THREE.Group , directory: Directory, subLevel: number, xPosition: number) {
+  public createDirectoryView(group: THREE.Group, directory: Directory, subLevel: number, xPosition: number) {
     const spacing = 0.5;
     const dirX = xPosition;
     const dirY = subLevel * spacing;
@@ -410,7 +422,9 @@ export default class ViewImpl implements View {
           this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
-          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
+
         })
         .onComplete(() => {
           resolve();
@@ -430,7 +444,8 @@ export default class ViewImpl implements View {
           this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
-          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
         })
         .onComplete(() => {
           this.programmers[programmer].lightSphere.material.color.set(0xff00ff);
@@ -451,7 +466,8 @@ export default class ViewImpl implements View {
           this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, 1);
           this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, 1);
           this.programmers[programmer].spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
-          this.programmers[programmer].label.position.set(startPosition.x, startPosition.y + 0.3, 1 + 0.1);
+          this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, 1 + 0.1);
+          this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, 1 + 0.1);
         })
         .onComplete(() => {
           resolve();

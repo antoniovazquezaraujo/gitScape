@@ -27,7 +27,7 @@ export interface Model {
   addElement(path: string, isFile: boolean): void;
   addFileOrDirectory(commitSha: string, file: any): void;
   removeElement(path: string): void;
-  getPullRequestForCommit(commitSha: string):any;  
+  getPullRequestForCommit(commitSha: string): any;
 }
 
 export class ModelImpl implements Model {
@@ -107,7 +107,7 @@ export class ModelImpl implements Model {
   public getPullRequest(number: number) {
     return this.allPullRequests[number];
   }
-  public getPullRequestForCommit(commitSha: string):any {
+  public getPullRequestForCommit(commitSha: string): any {
     // Get the pull request from the map
     return this.commitToPullRequest.get(commitSha);
   }
@@ -115,11 +115,10 @@ export class ModelImpl implements Model {
     this.directory = new Directory('');
     this.notifyObservers(EventType.DirectoryChange);
   }
-  public reloadDirectory() {
-    this.getTreeAtCommit(this.allCommits[this.commitIndex].sha).then(treeNode => {
-      this.directory = this.createDirectory(treeNode, null);
-      this.notifyObservers(EventType.DirectoryChange);
-    });
+  public async reloadDirectory() {
+    const treeNode = this.commitIndex === 0 ? new TreeNode('') : await this.getTreeAtCommit(this.allCommits[this.commitIndex -1].sha);
+    this.directory = this.createDirectory(treeNode, null);
+    this.notifyObservers(EventType.DirectoryChange);
   }
 
   private createOctokit(): void {
@@ -143,10 +142,10 @@ export class ModelImpl implements Model {
     return this.allCommits[index];
   }
   public getFirstCommit() {
-    return this.allCommits[this.allCommits.length - 1];
+    return this.allCommits[0];
   }
   public getLastCommit() {
-    return this.allCommits[0];
+    return this.allCommits[this.allCommits.length - 1];
   }
   public getCurrentCommit() {
     return this.allCommits[this.commitIndex];
@@ -232,8 +231,8 @@ export class ModelImpl implements Model {
   ////////////////// IMPLEMENTATION /////////////////////////////////
   // obtiene todos los commits de un repositorio
   private async reloadAllRepositoryCommits(): Promise<void> {
-    const perPage = 100; // Máximo permitido por la API de GitHub
-    let page = 1;
+    const perPage = 10; // Máximo permitido por la API de GitHub
+    let page = 0;
     this.allCommits = [];
 
     while (true) {
@@ -242,6 +241,7 @@ export class ModelImpl implements Model {
         repo: this.repo,
         per_page: perPage,
         page: page,
+        sha: 'develop'
       });
 
       this.allCommits = this.allCommits.concat(commits);
@@ -250,6 +250,7 @@ export class ModelImpl implements Model {
       }
       page++;
     }
+    this.allCommits.reverse();
     this.notifyObservers(EventType.RepositoryChange);
 
   }

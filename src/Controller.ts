@@ -35,14 +35,14 @@ export class ControllerImpl implements Controller {
   startSelected(): void {
     this.looping = true;
     this.view.setStarted();
-    let commitIndex = this.model.getCommitCount() - 1;
+    let commitIndex = 0;
     this.model.setCommitIndex(commitIndex);
     this.nextSelected();
   }
   nextSelected(): void {
     let commitIndex = this.model.getCommitIndex();
-    if (this.looping && commitIndex > 0) {
-      this.model.setCommitIndex(--commitIndex);
+    if (this.looping && commitIndex < this.model.getCommitCount() ) {
+      this.model.setCommitIndex(++commitIndex);
     }
   }
   stopSelected(): void {
