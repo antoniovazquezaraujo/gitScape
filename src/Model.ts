@@ -27,6 +27,7 @@ export interface Model {
   addElement(path: string, isFile: boolean): void;
   addFileOrDirectory(commitSha: string, file: any): void;
   removeElement(path: string): void;
+  getPullRequestForCommit(commitSha: string):any;  
 }
 
 export class ModelImpl implements Model {
@@ -35,6 +36,13 @@ export class ModelImpl implements Model {
   private owner!: string;
   private repo!: string;
   private allCommits: any[] = [];
+  // Add a property to store all pull requests
+  private allPullRequests: any[];
+  // Add a map to store the commits of each pull request
+  private pullRequestCommits: Map<number, any[]>;
+  // Add a map to link each commit to its pull request
+  private commitToPullRequest: Map<string, any>;
+
   private directory: Directory | undefined;
   private commitIndex: number = 0;
   private observers: { [key in EventType]?: (() => void)[] } = {};
@@ -42,6 +50,9 @@ export class ModelImpl implements Model {
   constructor() {
     this.observers = {};
     this.directory = new Directory('');
+    this.allPullRequests = [];
+    this.pullRequestCommits = new Map();
+    this.commitToPullRequest = new Map();
   }
   onChange(eventType: EventType, callback: () => void): void {
     if (!this.observers[eventType]) {
@@ -63,10 +74,43 @@ export class ModelImpl implements Model {
   public async initialize() {
     this.createOctokit();
     await this.reloadAllRepositoryCommits();
+    await this.initializePullRequests();
     this.loadInitialEmptyDirectory();
     this.setCommitIndex(0);
   }
+  async initializePullRequests() {
+    try {
+      this.allPullRequests = await this.getAllPullRequests();
 
+      // Get the commits of each pull request
+      for (const pr of this.allPullRequests) {
+        const commits = await this.octokit.paginate(this.octokit.pulls.listCommits.endpoint.merge({
+          owner: this.owner,
+          repo: this.repo,
+          pull_number: pr.number,
+          per_page: 100,
+        }));
+
+        // Store the commits in the map
+        this.pullRequestCommits.set(pr.number, commits);
+
+        // Link each commit to its pull request
+        let commit: any = {};
+        for (commit of commits) {
+          this.commitToPullRequest.set(commit.sha, pr);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  public getPullRequest(number: number) {
+    return this.allPullRequests[number];
+  }
+  public getPullRequestForCommit(commitSha: string):any {
+    // Get the pull request from the map
+    return this.commitToPullRequest.get(commitSha);
+  }
   public loadInitialEmptyDirectory() {
     this.directory = new Directory('');
     this.notifyObservers(EventType.DirectoryChange);
@@ -84,7 +128,7 @@ export class ModelImpl implements Model {
       auth: this.githubToken,
     });
     this.owner = 'antoniovazquezaraujo';
-    this.repo = 'letrain';
+    this.repo = 'gitScape';
   }
 
   public setCommitIndex(index: number) {
@@ -207,6 +251,7 @@ export class ModelImpl implements Model {
       page++;
     }
     this.notifyObservers(EventType.RepositoryChange);
+
   }
 
   private async getAllCommits() {
@@ -303,6 +348,26 @@ export class ModelImpl implements Model {
       console.error(error);
     }
   }
+
+  async getAllPullRequests() {
+    const options = this.octokit.pulls.list.endpoint.merge({
+      owner: this.owner,
+      repo: this.repo,
+      state: 'all',
+      per_page: 100, // maximum amount of results per page
+    });
+    return await this.octokit.paginate(options);
+  }
+
+  public async getCommitsFromUrl(url: string) {
+    try {
+      const { data: commits } = await this.octokit.request('GET ' + url);
+      return commits;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
 
 }
 

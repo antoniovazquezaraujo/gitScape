@@ -31,11 +31,13 @@ export default class ViewImpl implements View {
   private controls: OrbitControls | undefined;
   private model!: Model;
   private elements: { [path: string]: THREE.Mesh } = {};
+  private treeGroup!: THREE.Group<THREE.Object3DEventMap>;
   private ambientLight!: THREE.AmbientLight;
   private slider!: HTMLInputElement;
   private dateInput!: HTMLInputElement;
   private controller!: Controller;
   private started: boolean = false;
+  private visiblePullRequests: Set<string> = new Set<string>();
 
   private programmers: {
     [programmer: string]: {
@@ -44,7 +46,13 @@ export default class ViewImpl implements View {
       label: Text
     }
   } = {};
-  treeGroup: THREE.Group<THREE.Object3DEventMap>;
+
+  private pullRequests: {
+    [number: number]: {
+      graphicObject: THREE.Group<THREE.Object3DEventMap>,
+      directory: Directory,
+    }
+  } = {};
 
   public setModel(model: Model) {
     this.model = model;
@@ -97,7 +105,15 @@ export default class ViewImpl implements View {
 
   private async onCurrentCommitChange() {
     if (this.started) {
-      await this.animateCommit(this.model.getCurrentCommit());
+      const currentCommit = this.model.getCurrentCommit();
+      const pullRequest = this.model.getPullRequestForCommit(currentCommit.sha);
+      if (pullRequest && !this.visiblePullRequests.has(pullRequest.number)) {
+        this.visiblePullRequests.add(pullRequest.number);
+        console.log("current commit: ", currentCommit.commit.message, " Pull request: ", pullRequest.title);
+
+      }
+      console.log("current commit: ", currentCommit.commit.message, " Pull request: ", pullRequest ? pullRequest.title : "-");
+      await this.animateCommit(currentCommit);
     }
   }
   private onDirectoryChange() {
@@ -217,8 +233,8 @@ export default class ViewImpl implements View {
       this.model.getCommitFiles(commit.sha).then(async (files) => {
         for (const file of files!) {
           if (file.status === 'added') {
-            await this.model.addFileOrDirectory(commit.sha, file);
-            console.log("added", file);
+            this.model.addFileOrDirectory(commit.sha, file);
+            // console.log("added", file);
           } else if (file.status === 'removed') {
             this.model.removeElement(file.filename);
           }
@@ -240,16 +256,10 @@ export default class ViewImpl implements View {
   public async clearScene() {
     this.scene!.remove(this.treeGroup);
     this.treeGroup = new THREE.Group();
-    for (let i = this.scene!.children.length - 1; i >= 0; i--) {
-      const object = this.scene!.children[i];
-      if (!(object instanceof THREE.Camera) && !(object instanceof THREE.Light)) {
-        // this.scene!.remove(object);
-      }
-    }
   }
   public createDirectoryView(directory: Directory, subLevel: number, xPosition: number) {
     const spacing = 0.5;
-    
+
     const dirX = xPosition;
     const dirY = subLevel * spacing;
     const horizontalLineShift = 2;
@@ -279,7 +289,6 @@ export default class ViewImpl implements View {
     dirGroup.add(dirText);
 
     dirGroup.position.set(dirX, dirY, 0);
-    // this.scene!.add(dirGroup);
 
     // Line up to the parent directory
     const points = [];
@@ -289,7 +298,6 @@ export default class ViewImpl implements View {
     const lineMaterial = new THREE.LineBasicMaterial({ color: this.horizontalLineColor });
     const line = new THREE.Line(lineGeometry, lineMaterial);
     this.treeGroup.add(line);
-    // this.scene!.add(line);
 
     const filesGroup = new THREE.Group();
     // Files of this directory
@@ -348,7 +356,7 @@ export default class ViewImpl implements View {
         }
       });
     });
-    // this.scene!.add(filesGroup);
+
     this.treeGroup.add(filesGroup)
 
     // The subdirectories of this directory
@@ -363,7 +371,6 @@ export default class ViewImpl implements View {
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
       const lineMaterial = new THREE.LineBasicMaterial({ color: this.verticalLineColor });
       const line = new THREE.Line(lineGeometry, lineMaterial);
-      // this.scene!.add(line);
       this.treeGroup.add(line);
 
       // Render the subdirectory
@@ -371,9 +378,6 @@ export default class ViewImpl implements View {
     };
     return subLevel;
   }
-
-
-
 
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
