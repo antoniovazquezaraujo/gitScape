@@ -46,7 +46,7 @@ export default class ViewImpl implements View {
   private folder!: Folder;
   private controller!: Controller;
   private model!: Model;
-  private elements: { [path: string]: THREE.Mesh } = {};
+  private elements: { [path: string]: THREE.Group } = {};
   private treeGroup!: THREE.Group<THREE.Object3DEventMap>;
   private ambientLight!: THREE.AmbientLight;
   private started: boolean = false;
@@ -68,7 +68,7 @@ export default class ViewImpl implements View {
     }
   } = {};
   public setModel(model: Model) {
-    this.model =model;
+    this.model = model;
   }
   public setController(controller: Controller) {
     this.controller = controller;
@@ -270,16 +270,22 @@ export default class ViewImpl implements View {
     this.moveFirstFileDistance(filesGroup.position);
     for (const file of folder.files) {
       const fileGroup = new THREE.Group();
+      let path = file;
+      if (folder.name !== '') {
+        path = folder.getPath() + "/" + file;
+      }
       this.moveFileDistance(fileGroup.position, index);
-      this.paintFile(file, fileGroup);
+      this.paintFile(file, fileGroup, path);
       filesGroup.add(fileGroup);
       index++;
     }
     group.add(filesGroup);
   }
-  public paintFile(name: string, group: THREE.Group) {
+  public paintFile(name: string, group: THREE.Group, path: string) {
     const myGroup = new THREE.Group();
-    myGroup.add(this.fileBox(name));
+    const fileBox = this.fileBox(name);
+    this.elements[path] = fileBox;
+    myGroup.add(fileBox);
     group.add(myGroup);
   }
   public paintSubFolders(folder: Folder, group: THREE.Group) {
@@ -401,9 +407,11 @@ export default class ViewImpl implements View {
           }
           const fileObject = this.elements[file.filename];
           if (fileObject) {
+            let position = new THREE.Vector3();
+            fileObject.getWorldPosition(position);
             // we use parent to obtain the absolute position of the file, relative to his parent group
-            await this.moveProgrammerTo(programmer, fileObject.parent!.position);
-            await this.makeFileGlow(fileObject);
+            await this.moveProgrammerTo(programmer, position);
+            // await this.makeFileGlow(fileObject);
           }
           if (file.status === 'removed') {
             this.model.removeElement(file.filename);
