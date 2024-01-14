@@ -1,44 +1,58 @@
-import * as THREE from 'three';
-import { Text } from 'troika-three-text';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Easing, Tween } from '@tweenjs/tween.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { Text } from 'troika-three-text';
 
-import { Directory, Model, EventType } from './Model';
 import { Controller } from './Controller';
+import { EventType, Folder, Model } from './Model';
+import { GrowDirection, IMovingStrategy, MovingStrategy } from './MovingStrategy';
 
 interface View {
-  update(): void; // Actualiza la vista
   setStarted(): void;
   setStopped(): void;
   onStartSelected(): void; // Inicia el recorrido por los commits
   onStopSelected(): void; // Detiene el recorrido por los commits
   onSliderChanged(index: number): void; // El usuario mueve el slider, se avisa al modelo y luego el modelo nos avisa del cambio con update
+
 }
 
 export default class ViewImpl implements View {
-  private readonly directoryColor = 0x999999;
-  private readonly fileColor = 0xffffff;
+
+  private readonly folderColor = 0xAA5555;
+  private readonly fileColor = 0x5555AA;
   private readonly fileBorderColor = 0x999999;
-  private readonly fileTextColor = 0x000000;
+  private readonly fileTextColor = 0x00ff00;
   private readonly folderTextColor = 0x000000;
-  private readonly horizontalLineColor = 0x999999;
-  private readonly verticalLineColor = 0x999999;
+  private readonly lineColor = 0x999999;
+
+  private drawGrow: 'l' | 'r' | 'u' | 'd' = 'r';
+  private drawMode: 'h' | 'v' = 'h';
+
+  private folderWidth = 1;
+  private folderHeight = .3;
+  private folderPanelDepth = 0.05;
+
+  private fileWidth = 1;
+  private fileHeight = .3;
+  private filePanelDepth = 0.1;
+  private movingStrategy!: IMovingStrategy;
+
 
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer | undefined;
   private tween!: Tween<THREE.Vector3>;
   private controls: OrbitControls | undefined;
+  private folder!: Folder;
+  private controller!: Controller;
   private model!: Model;
   private elements: { [path: string]: THREE.Mesh } = {};
   private treeGroup!: THREE.Group<THREE.Object3DEventMap>;
   private ambientLight!: THREE.AmbientLight;
+  private started: boolean = false;
   private slider!: HTMLInputElement;
   private dateInput!: HTMLInputElement;
-  private controller!: Controller;
-  private started: boolean = false;
   private visiblePullRequests: Set<string> = new Set<string>();
-
   private programmers: {
     [programmer: string]: {
       lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
@@ -47,22 +61,28 @@ export default class ViewImpl implements View {
       commitText: Text
     }
   } = {};
-
   private pullRequests: {
     [number: number]: {
       graphicObject: THREE.Group<THREE.Object3DEventMap>,
-      directory: Directory,
+      folder: Folder,
     }
   } = {};
-
   public setModel(model: Model) {
-    this.model = model;
+    this.model =model;
   }
-  public setController(controller: any) {
+  public setController(controller: Controller) {
     this.controller = controller;
   }
-
+  public setStarted(): void {
+    this.started = true;
+  }
+  public setStopped(): void {
+    this.started = false;
+  }
   async initialize(): Promise<void> {
+    this.movingStrategy = new MovingStrategy();
+    this.movingStrategy.setGrowingDirections(GrowDirection.R, GrowDirection.U);
+    this.movingStrategy.setDistances(this.folderWidth, this.folderHeight, this.fileWidth, this.fileHeight);
     this.createScene();
     this.createCamera();
     this.createLights();
@@ -73,24 +93,20 @@ export default class ViewImpl implements View {
     this.createDateInput();
     this.addEventListeners();
     this.animate();
+    this.clearScene();
+    this.start();
   }
-  public setStarted(): void {
-    this.started = true;
-  }
-  public setStopped(): void {
-    this.started = false;
-  }
+
   private addEventListeners() {
-    this.model.onChange(EventType.DirectoryChange, () => this.onDirectoryChange());
+    this.model.onChange(EventType.FolderChange, () => this.onFolderChange());
     this.model.onChange(EventType.RepositoryChange, () => this.onRepositoryChange());
     this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
-
     this.slider.addEventListener('input', () => {
       const commitIndex = parseInt(this.slider.value, 10);
       this.onSliderChanged(commitIndex);
     });
     window.addEventListener('resize', () => this.onWindowResize(), false);
-    document.addEventListener('keydown', (event) => {
+    document.addEventListener('keydown', async (event) => {
       if (event.code === 'Space') {
         if (!this.started) {
           this.started = true;
@@ -100,9 +116,39 @@ export default class ViewImpl implements View {
           this.onStopSelected();
         }
       }
+      if (event.shiftKey) {
+        if (event.code === 'KeyH') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.L);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.U);
+        } else if (event.code === 'KeyJ') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.D);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.L);
+        } else if (event.code === 'KeyK') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.U);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.R);
+        } else if (event.code === 'KeyL') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.R);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.D);
+        }
+      } else {
+        if (event.code === 'KeyH') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.L);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.D);
+        } else if (event.code === 'KeyJ') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.D);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.R);
+        } else if (event.code === 'KeyK') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.U);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.L);
+        } else if (event.code === 'KeyL') {
+          this.movingStrategy.setFolderGrowDirection(GrowDirection.R);
+          this.movingStrategy.setFileGrowDirection(GrowDirection.U);
+        }
+      }
+      this.movingStrategy.setDistances(this.folderWidth, this.folderHeight, this.fileWidth, this.fileHeight);
+      this.start();
     });
   }
-
   private async onCurrentCommitChange() {
     if (this.started) {
       const currentCommit = this.model.getCurrentCommit();
@@ -116,14 +162,14 @@ export default class ViewImpl implements View {
     const datetime = this.model.getCurrentCommit().commit.author.date;
     this.dateInput.value = datetime.toLocaleString();
   }
-  private onDirectoryChange() {
+  private onFolderChange() {
     this.clearScene();
-    this.createDirectoryView(this.treeGroup, this.model.getDirectory(), 0, 0);
+    this.paintView(this.model.getFolder(), this.treeGroup);
   }
   private onRepositoryChange() {
     this.slider.max = (this.model.getCommitCount() - 1).toString();
     this.clearScene();
-    this.createDirectoryView(this.treeGroup, this.model.getDirectory(), 0, 0);
+    this.paintView(this.model.getFolder(), this.treeGroup);
   }
   private createSlider() {
     this.slider = document.getElementById('slider') as HTMLInputElement;
@@ -180,13 +226,6 @@ export default class ViewImpl implements View {
     this.renderer!.setSize(window.innerWidth, window.innerHeight);
   }
 
-  update(): void {
-    this.clearScene();
-    this.createDirectoryView(this.treeGroup, this.model.getDirectory(), 0, 0);
-    const datetime = this.model.getCurrentCommit().author.date;
-    this.dateInput.value = datetime.toLocaleString();
-  }
-
   onStartSelected(): void {
     this.controller.startSelected();
   }
@@ -204,6 +243,120 @@ export default class ViewImpl implements View {
     this.renderer!.render(this.scene!, this.camera!);
   }
 
+  public async clearScene() {
+    this.scene!.remove(this.treeGroup);
+    this.treeGroup = new THREE.Group();
+    this.scene!.add(this.treeGroup);
+  }
+
+
+  public async start() {
+    await this.clearScene();
+    this.paintView(this.folder, this.treeGroup);
+  }
+  public paintView(folder: Folder, group: THREE.Group) {
+    this.paintFolder(folder, group);
+    this.paintFolderContent(folder, group);
+    this.paintSubFolders(folder, group);
+  }
+  public paintFolder(folder: Folder, group: THREE.Group) {
+    const myGroup = new THREE.Group();
+    myGroup.add(this.folderBox(folder.name));
+    group.add(myGroup);
+  }
+  public paintFolderContent(folder: Folder, group: THREE.Group) {
+    let index = 0;
+    const filesGroup = new THREE.Group();
+    this.moveFirstFileDistance(filesGroup.position);
+    for (const file of folder.files) {
+      const fileGroup = new THREE.Group();
+      this.moveFileDistance(fileGroup.position, index);
+      this.paintFile(file, fileGroup);
+      filesGroup.add(fileGroup);
+      index++;
+    }
+    group.add(filesGroup);
+  }
+  public paintFile(name: string, group: THREE.Group) {
+    const myGroup = new THREE.Group();
+    myGroup.add(this.fileBox(name));
+    group.add(myGroup);
+  }
+  public paintSubFolders(folder: Folder, group: THREE.Group) {
+    const subFoldersGroup = new THREE.Group();
+    let lastNumSubFolders = 1;
+    let index = 1;
+    for (const subFolder of folder.subFolders) {
+      const currentSubFolderGroup = new THREE.Group();
+      this.moveSiblingDistance(currentSubFolderGroup.position, lastNumSubFolders);
+      this.moveSonDistance(currentSubFolderGroup.position);
+      this.paintView(subFolder, currentSubFolderGroup);
+      this.connect(subFolder, subFoldersGroup, lastNumSubFolders);
+      subFoldersGroup.add(currentSubFolderGroup);
+      lastNumSubFolders += subFolder.getNumSubFolders();
+      index++;
+    }
+    group.add(subFoldersGroup);
+  }
+
+  public connect(folder: Folder, group: THREE.Group, numSubFolders: number) {
+    const lineGroup = new (THREE.Group);
+    const points = [];
+    let point0 = new THREE.Vector3(0, 0, 0);
+    let point1 = new THREE.Vector3(0, 0, 0);
+    this.moveSiblingDistance(point1, numSubFolders);
+    let point2 = new THREE.Vector3(0, 0, 0);
+    this.moveSiblingDistance(point2, numSubFolders);
+    this.moveSonDistance(point2);
+    points.push(point0, point1, point2);
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+    const lineMaterial = new THREE.LineBasicMaterial({ color: this.lineColor });
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+    lineGroup.add(line);
+    group.add(lineGroup);
+  }
+
+  public folderBox(name: string) {
+    return this.newBox(this.folderColor, name, this.folderWidth, this.folderHeight, this.folderPanelDepth);
+  }
+  public fileBox(name: string) {
+    return this.newBox(this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth);
+  }
+  public newBox(theColor: any, name: string = "unnamed", width: number, height: number, depth: number) {
+    const boxGroup = new THREE.Group();
+    const geometry = new THREE.BoxGeometry(width, height, depth);
+    const material = new THREE.MeshLambertMaterial({ color: theColor });
+    boxGroup.add(new THREE.Mesh(geometry, material));
+
+    const boxName = new Text();
+    boxName.text = name;
+    boxName.fontSize = 0.1;
+    boxName.color = this.getComplementaryColor(theColor);
+    boxName.anchorX = 'center';
+    boxName.position.set(0, 0, (depth / 2) + 0.03);
+    boxName.sync();
+    boxGroup.add(boxName);
+    return boxGroup;
+
+  }
+  public getComplementaryColor(hexColor: any) {
+    let decimalColor = parseInt(hexColor, 16);
+    let invertedColor = 0xFFFFFF ^ decimalColor;
+    let invertedHexColor = ("000000" + invertedColor.toString(16)).slice(-6);
+    return '#' + invertedHexColor;
+  }
+  moveSiblingDistance(point: THREE.Vector3, multiplyer: number = 1): void {
+    this.movingStrategy.moveSiblingDistance(point, multiplyer);
+  }
+  moveSonDistance(point: THREE.Vector3): void {
+    this.movingStrategy.moveSonDistance(point);
+  }
+  moveFileDistance(point: THREE.Vector3, multiplyer: number): void {
+    this.movingStrategy.moveFileDistance(point, multiplyer);
+  }
+  moveFirstFileDistance(point: THREE.Vector3) {
+    this.movingStrategy.moveFirstFileDistance(point);
+  }
   async animateCommit(commit: any) {
     const programmer = commit.commit.author.email;
 
@@ -241,10 +394,10 @@ export default class ViewImpl implements View {
     }
     this.programmers[programmer].commitText.text = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
-      this.model.getCommitFiles(commit.sha).then(async (files) => {
+      this.model.getCommitFiles(commit.sha).then(async (files: any) => {
         for (const file of files!) {
           if (file.status === 'added') {
-            await this.model.addFileOrDirectory(commit.sha, file);
+            await this.model.addFileOrFolder(commit.sha, file);
           }
           const fileObject = this.elements[file.filename];
           if (fileObject) {
@@ -252,10 +405,10 @@ export default class ViewImpl implements View {
             await this.moveProgrammerTo(programmer, fileObject.parent!.position);
             await this.makeFileGlow(fileObject);
           }
-        if (file.status === 'removed') {
-          this.model.removeElement(file.filename);
+          if (file.status === 'removed') {
+            this.model.removeElement(file.filename);
+          }
         }
-      }
       }).then(() => {
         this.moveProgrammerToWaitOrbit(programmer)
           .then(() => {
@@ -265,150 +418,6 @@ export default class ViewImpl implements View {
     });
   }
 
-  public async clearScene() {
-    this.scene!.remove(this.treeGroup);
-    this.treeGroup = new THREE.Group();
-    this.scene!.add(this.treeGroup);
-  }
-  public createDirectoryView(group: THREE.Group, directory: Directory, subLevel: number, xPosition: number) {
-    const spacing = 0.5;
-    const dirX = xPosition;
-    const dirY = subLevel * spacing;
-    const horizontalLineShift = 2;
-    const elementWidth = 1.5;
-    const elementHeight = 0.5;
-
-    this.addDirectoryGroup(group, elementWidth, elementHeight, directory, dirX, dirY, horizontalLineShift);
-    this.addFilesGroup(group, directory, elementWidth, dirX, subLevel, spacing);
-    return this.addSubdirectoriesGroup(group, subLevel, spacing, directory, xPosition);
-  }
-
-  private addDirectoryGroup(group: THREE.Group, elementWidth: number, elementHeight: number, directory: Directory, dirX: number, dirY: number, horizontalLineShift: number) {
-    const directoryGroup = new THREE.Group();
-    // Directory Panel
-    const geometry = new THREE.BoxGeometry(elementWidth, elementHeight, 0.05);
-    const material = new THREE.MeshLambertMaterial({ color: this.directoryColor });
-    const directoryPanel = new THREE.Mesh(geometry, material);
-    let path = directory.getPath();
-    this.elements[path] = directoryPanel;
-    directoryGroup.add(directoryPanel);
-
-    // Directory name
-    const directoryName = new Text();
-    directoryName.text = directory.name;
-    directoryName.fontSize = 0.1;
-    directoryName.color = this.folderTextColor;
-    directoryName.anchorX = 'center';
-    directoryName.position.z = 0.03;
-    directoryName.sync();
-    directoryGroup.add(directoryName);
-
-    directoryGroup.position.set(dirX, dirY, 0);
-
-    // Line up to the parent directory
-    const points = [];
-    points.push(new THREE.Vector3(0, 0, 0)); // start at the left side of the subdirectory Panel
-    points.push(new THREE.Vector3(0 - horizontalLineShift, 0, 0)); // go left one level
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMaterial = new THREE.LineBasicMaterial({ color: this.horizontalLineColor });
-    const line = new THREE.Line(lineGeometry, lineMaterial);
-    directoryGroup.add(line);
-    group.add(directoryGroup);
-  }
-
-  private addSubdirectoriesGroup(group: THREE.Group, subLevel: number, spacing: number, directory: Directory, xPosition: number) {
-    var lastLevel = subLevel * spacing;
-    for (let key in directory.subdirectories) {
-      let subdirectory = directory.subdirectories[key];
-
-      // Line left   
-      const points = [];
-      points.push(new THREE.Vector3(xPosition, (subLevel - 1) * spacing, 0));
-      points.push(new THREE.Vector3(xPosition, lastLevel, 0));
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-      const lineMaterial = new THREE.LineBasicMaterial({ color: this.verticalLineColor });
-      const line = new THREE.Line(lineGeometry, lineMaterial);
-      group.add(line);
-
-      // Render the subdirectory
-      subLevel = this.createDirectoryView(group, subdirectory, subLevel - 1, xPosition + 2);
-    };
-    return subLevel;
-  }
-
-  private addFilesGroup(group: THREE.Group, directory: Directory, elementWidth: number, dirX: number, subLevel: number, spacing: number) {
-    const filesGroup = new THREE.Group();
-    directory.files.forEach((file: any, index: any) => {
-      filesGroup.add(this.createFileGroup(file, index, elementWidth, dirX, subLevel, spacing, directory));
-    });
-    group.add(filesGroup);
-  }
-
-  private createFileGroup(file: any, index: any, elementWidth: number, dirX: number, subLevel: number, spacing: number, directory: Directory) {
-    const fileGroup = new THREE.Group();
-    const filePanel = this.createFilePanel(file, directory, elementWidth);
-    fileGroup.add(filePanel);
-
-    const line = this.createFilePanelBorder(filePanel);
-    fileGroup.add(line);
-
-    fileGroup.add(this.createWrappedFilename(file));
-    fileGroup.position.set(((index + 1) * elementWidth) + dirX, (subLevel) * spacing, 0);
-    this.addFileGroupRotation(fileGroup);
-    return fileGroup;
-  }
-
-  private createFilePanel(file: any, directory: Directory, elementWidth: number) {
-    const fileGeometry = new THREE.BoxGeometry(elementWidth, .5, .2);
-    const fileMaterial = new THREE.MeshLambertMaterial({
-      color: this.fileColor,
-      transparent: true,
-      opacity: 1
-    });
-    const filePanel = new THREE.Mesh(fileGeometry, fileMaterial);
-    let path = file;
-    if (directory.name !== '') {
-      path = directory.getPath() + "/" + file;
-    }
-    this.elements[path] = filePanel;
-    return filePanel;
-  }
-
-  private createFilePanelBorder(filePanel: any) {
-    const edges = new THREE.EdgesGeometry(filePanel.geometry);
-    const line = new THREE.LineSegments(edges, new THREE.MeshLambertMaterial({ color: this.fileBorderColor }));
-    return line;
-  }
-
-  private createWrappedFilename(file: any) {
-    const paragraphGroup = new THREE.Group();
-    const maxCharsPerLine = 20;
-    const lines = file.match(new RegExp(`.{1,${maxCharsPerLine}}`, 'g')) || [];
-    for (let i = 0; i < lines.length; i++) {
-      const fileText = new Text();
-      fileText.text = lines[i];
-      fileText.fontSize = 0.1;
-      fileText.color = this.fileTextColor;
-      fileText.anchorX = 'center';
-      fileText.position.z = 0.15;
-      fileText.position.y = 0.15 + (-i * 0.15);
-      fileText.sync();
-      paragraphGroup.add(fileText);
-    }
-    return paragraphGroup;
-  }
-
-  private addFileGroupRotation(fileGroup: any) {
-    document.addEventListener('keydown', (event) => {
-      if (event.code === 'KeyX') {
-        fileGroup.rotateX(Math.PI / 2);
-      } else if (event.code === 'KeyY') {
-        fileGroup.rotateY(Math.PI / 2);
-      } else if (event.code === 'KeyZ') {
-        fileGroup.rotateZ(Math.PI / 2);
-      }
-    });
-  }
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
       this.programmers[programmer].lightSphere.material.color.set(0x808080);

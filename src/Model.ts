@@ -2,7 +2,7 @@ import { Octokit } from '@octokit/rest';
 
 export enum EventType {
   RepositoryChange = 'repositoryChange',
-  DirectoryChange = 'directoryChange',
+  FolderChange = 'folderChange',
   CurrentCommitChange = 'currentCommitChange'
 }
 export interface Model {
@@ -12,7 +12,7 @@ export interface Model {
   onChange(eventType: EventType, callback: () => void): void;
   notifyObservers(eventType: EventType): void;
 
-  reloadDirectory(): void;
+  reloadFolder(): void;
   setCommitIndex(index: number): void;
   getCommitIndex(): number;
   getCommit(index: number): any;
@@ -23,9 +23,9 @@ export interface Model {
   getCurrentCommitDate(): Date;
   getCommitFiles(ref: string): Promise<any>;
   getFileInfo(file: any): any;
-  getDirectory(): Directory;
+  getFolder(): Folder;
   addElement(path: string, isFile: boolean): void;
-  addFileOrDirectory(commitSha: string, file: any): void;
+  addFileOrFolder(commitSha: string, file: any): void;
   removeElement(path: string): void;
   getPullRequestForCommit(commitSha: string): any;
 }
@@ -43,13 +43,13 @@ export class ModelImpl implements Model {
   // Add a map to link each commit to its pull request
   private commitToPullRequest: Map<string, any>;
 
-  private directory: Directory | undefined;
+  private folder: Folder | undefined;
   private commitIndex: number = 0;
   private observers: { [key in EventType]?: (() => void)[] } = {};
 
   constructor() {
     this.observers = {};
-    this.directory = new Directory('');
+    this.folder = new Folder('');
     this.allPullRequests = [];
     this.pullRequestCommits = new Map();
     this.commitToPullRequest = new Map();
@@ -75,7 +75,7 @@ export class ModelImpl implements Model {
     this.createOctokit();
     await this.reloadAllRepositoryCommits();
     await this.initializePullRequests();
-    this.loadInitialEmptyDirectory();
+    this.loadInitialEmptyFolder();
     this.setCommitIndex(0);
   }
   async initializePullRequests() {
@@ -111,14 +111,14 @@ export class ModelImpl implements Model {
     // Get the pull request from the map
     return this.commitToPullRequest.get(commitSha);
   }
-  public loadInitialEmptyDirectory() {
-    this.directory = new Directory('');
-    this.notifyObservers(EventType.DirectoryChange);
+  public loadInitialEmptyFolder() {
+    this.folder = new Folder('');
+    this.notifyObservers(EventType.FolderChange);
   }
-  public async reloadDirectory() {
-    const treeNode = this.commitIndex === 0 ? new TreeNode('') : await this.getTreeAtCommit(this.allCommits[this.commitIndex -1].sha);
-    this.directory = this.createDirectory(treeNode, null);
-    this.notifyObservers(EventType.DirectoryChange);
+  public async reloadFolder() {
+    const treeNode = this.commitIndex === 0 ? new TreeNode('') : await this.getTreeAtCommit(this.allCommits[this.commitIndex - 1].sha);
+    this.folder = this.createFolder(treeNode, null);
+    this.notifyObservers(EventType.FolderChange);
   }
 
   private createOctokit(): void {
@@ -127,7 +127,7 @@ export class ModelImpl implements Model {
       auth: this.githubToken,
     });
     this.owner = 'antoniovazquezaraujo';
-    this.repo = 'gitScape';
+    this.repo = 'letrain';
   }
 
   public setCommitIndex(index: number) {
@@ -164,11 +164,11 @@ export class ModelImpl implements Model {
     }
     return null;
   }
-  // Obtiene una estructura de Directory a partir de un TreeNode
-  public getDirectory(): Directory {
-    return this.directory!;
+  // Obtiene una estructura de Folder a partir de un TreeNode
+  public getFolder(): Folder {
+    return this.folder!;
   }
-  public async addFileOrDirectory(commitSha: string, file: any): Promise<void> {
+  public async addFileOrFolder(commitSha: string, file: any): Promise<void> {
     const treeNode = await this.getTreeAtCommit(commitSha);
     const found = treeNode.find(file.filename);
     if (found) {
@@ -182,50 +182,50 @@ export class ModelImpl implements Model {
 
   public addElement(path: string, isFile: boolean): void {
     const pathComponents = path.split('/');
-    let currentDirectory = this.directory!;
+    let currentFolder = this.folder!;
 
     for (let i = 0; i < pathComponents.length - 1; i++) {
-      const subdirectoryName = pathComponents[i];
-      let subdirectory = currentDirectory.subdirectories.find(d => d.name === subdirectoryName);
-      if (!subdirectory) {
-        subdirectory = new Directory(subdirectoryName, currentDirectory);
-        currentDirectory.subdirectories.push(subdirectory);
+      const subFolderName = pathComponents[i];
+      let subFolder = currentFolder.subFolders.find(d => d.name === subFolderName);
+      if (!subFolder) {
+        subFolder = new Folder(subFolderName, currentFolder);
+        currentFolder.addSubFolder(subFolder);
       }
-      currentDirectory = subdirectory;
+      currentFolder = subFolder;
     }
 
     const newNodeName = pathComponents[pathComponents.length - 1];
     const newNode = new TreeNode(newNodeName, isFile, {});
     if (isFile) {
-      if (!currentDirectory.files.find(f => f === newNode.name)) {
-        currentDirectory.files.push(newNode.name);
+      if (!currentFolder.files.find(f => f === newNode.name)) {
+        currentFolder.addFile(newNode.name);
       }
     } else {
-      if (!currentDirectory.subdirectories.find(d => d.name === newNode.name)) {
-        const newSubdirectory = this.createDirectory(newNode, currentDirectory);
-        currentDirectory.subdirectories.push(newSubdirectory);
+      if (!currentFolder.subFolders.find(d => d.name === newNode.name)) {
+        const newSubFolder = this.createFolder(newNode, currentFolder);
+        currentFolder.addSubFolder(newSubFolder);
       }
     }
-    this.notifyObservers(EventType.DirectoryChange);
+    this.notifyObservers(EventType.FolderChange);
   }
   public removeElement(path: string): void {
     const parentPath = path.substring(0, path.lastIndexOf('/'));
     const elementName = path.substring(path.lastIndexOf('/') + 1);
-    const directory = this.findDirectoryByPath(this.directory!, parentPath);
-    if (directory) {
-      let index = directory.files.indexOf(elementName);
+    const folder = this.findFolderByPath(this.folder!, parentPath);
+    if (folder) {
+      let index = folder.files.indexOf(elementName);
       if (index !== -1) {
-        directory.files.splice(index, 1);
+        folder.removeFile(elementName);
       } else {
-        for (let i = 0; i < directory.subdirectories.length; i++) {
-          if (directory.subdirectories[i].name === elementName) {
-            directory.subdirectories.splice(i, 1);
+        for (let i = 0; i < folder.subFolders.length; i++) {
+          if (folder.subFolders[i].name === elementName) {
+            folder.removeSubFolder(folder.subFolders[i]);
             break;
           }
         }
       }
     }
-    this.notifyObservers(EventType.DirectoryChange);
+    this.notifyObservers(EventType.FolderChange);
   }
 
   ////////////////// IMPLEMENTATION /////////////////////////////////
@@ -286,30 +286,30 @@ export class ModelImpl implements Model {
 
     return root;
   }
-  // Crea una estructura de Directory a partir de un TreeNode de forma recursiva
-  private createDirectory(node: TreeNode, parent: Directory | null = null): Directory {
-    const directory = new Directory(node.name, parent);
+  // Crea una estructura de Folder a partir de un TreeNode de forma recursiva
+  private createFolder(node: TreeNode, parent: Folder | null = null): Folder {
+    const folder = new Folder(node.name, parent);
 
     for (let key in node.children) {
       const childNode = node.children[key];
       if (childNode.isFile) {
-        directory.files.push(childNode.name);
+        folder.addFile(childNode.name);
       } else {
-        const subdirectory = this.createDirectory(childNode, directory);
-        directory.subdirectories.push(subdirectory);
+        const subFolder = this.createFolder(childNode, folder);
+        folder.addSubFolder(subFolder);
       }
     }
-    return directory;
+    return folder;
   }
 
-  private findDirectoryByPath(root: Directory, path: string): Directory | null {
+  private findFolderByPath(root: Folder, path: string): Folder | null {
     const parts = path.split('/');
-    let currentDirectory = root;
+    let currentFolder = root;
     for (let part of parts) {
       let found = false;
-      for (let subdirectory of currentDirectory.subdirectories) {
-        if (subdirectory.name === part) {
-          currentDirectory = subdirectory;
+      for (let subFolder of currentFolder.subFolders) {
+        if (subFolder.name === part) {
+          currentFolder = subFolder;
           found = true;
           break;
         }
@@ -318,7 +318,7 @@ export class ModelImpl implements Model {
         return null;
       }
     }
-    return currentDirectory;
+    return currentFolder;
   }
 
 
@@ -396,19 +396,52 @@ export class TreeNode {
   }
 }
 
-export class Directory {
+export class Folder {
   name: string;
-  parent: Directory | null;
-  subdirectories: Directory[];
+  parent: Folder | null;
+  subFolders: Folder[];
   files: string[];
 
-  constructor(name: string, parent: Directory | null = null) {
+  constructor(name: string, parent: Folder | null = null) {
     this.name = name;
     this.parent = parent;
-    this.subdirectories = [];
+    this.subFolders = [];
     this.files = [];
   }
+  public getNumSubFolders(): number {
+    let total = 1;
+    for (let subFolder of this.subFolders) {
+      total += subFolder.getNumSubFolders();
+    }
+    return total;
+  }
+  public getNumFiles(){
+    return this.files.length;
+  }
+  public getParent(){
+    return this.parent;
+  }
 
+  addFile(file: any) {
+    this.files.push(file);
+  }
+
+  removeFile(file: string) {
+    this.files.splice(this.files.indexOf(file), 1);
+  }
+
+  addSubFolder(subFolder: Folder) {
+    this.subFolders.push(subFolder);
+  }
+  removeSubFolderByName(name: string) {
+    const subFolder = this.subFolders.find(d => d.name === name);
+    if (subFolder) {
+      this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
+    }
+  }
+  removeSubFolder(subFolder: Folder) {
+    this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
+  }
   getPath(): string {
     if (this.parent === null || this.parent.name === '') {
       return this.name;

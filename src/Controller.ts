@@ -30,7 +30,7 @@ export class ControllerImpl implements Controller {
   commitIndexChanged(index: number): void {
     this.view.setStopped();
     this.model.setCommitIndex(index);
-    this.model.reloadDirectory();
+    this.model.reloadFolder();
   }
   startSelected(): void {
     this.looping = true;
