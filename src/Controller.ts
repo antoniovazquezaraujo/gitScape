@@ -23,7 +23,9 @@ export class ControllerImpl implements Controller {
   }
 
   initialize(): void {
+    this.view.setController(this);
     this.model.initialize();
+    this.view.setModel(this.model);
     this.view.initialize();
   }
 

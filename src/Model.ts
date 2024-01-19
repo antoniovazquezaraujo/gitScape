@@ -399,14 +399,16 @@ export class TreeNode {
 export class Folder {
   name: string;
   parent: Folder | null;
-  subFolders: Folder[];
+  subFolders: Folder[]; 
   files: string[];
+  open: boolean;
 
   constructor(name: string, parent: Folder | null = null) {
     this.name = name;
     this.parent = parent;
     this.subFolders = [];
     this.files = [];
+    this.open = true;
   }
   public getNumSubFolders(): number {
     let total = 1;

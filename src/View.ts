@@ -6,6 +6,12 @@ import { Text } from 'troika-three-text';
 import { Controller } from './Controller';
 import { EventType, Folder, Model } from './Model';
 import { GrowDirection, IMovingStrategy, MovingStrategy } from './MovingStrategy';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
+
+
+
+
+// Carga el modelo
 
 interface View {
   setStarted(): void;
@@ -55,10 +61,11 @@ export default class ViewImpl implements View {
   private visiblePullRequests: Set<string> = new Set<string>();
   private programmers: {
     [programmer: string]: {
-      lightSphere: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
+      //spotLight: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
       spotLight: THREE.SpotLight,
       programmerText: Text,
-      commitText: Text
+      commitText: Text,
+      astronaut: THREE.Group<THREE.Object3DEventMap>
     }
   } = {};
   private pullRequests: {
@@ -98,6 +105,30 @@ export default class ViewImpl implements View {
   }
 
   private addEventListeners() {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    window.addEventListener('click', (event) => {
+      // Actualiza la posición del mouse
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      // Actualiza el rayo con la cámara y la posición del mouse
+      raycaster.setFromCamera(mouse, this.camera);
+
+      // Calcula los objetos que intersectan
+      const intersects = raycaster.intersectObjects(this.scene.children, true);
+
+      if (intersects.length > 0) {
+        // El primer objeto intersectado es el más cercano
+        const object = intersects[0].object;
+        const folder = object.getObjectByName('folder');
+        folder?.children.forEach((child) => {
+          if (child instanceof Text) {
+            console.log(child);
+          }
+        });
+      }
+    }, false);
     this.model.onChange(EventType.FolderChange, () => this.onFolderChange());
     this.model.onChange(EventType.RepositoryChange, () => this.onRepositoryChange());
     this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
@@ -256,12 +287,14 @@ export default class ViewImpl implements View {
   }
   public paintView(folder: Folder, group: THREE.Group) {
     this.paintFolder(folder, group);
-    this.paintFolderContent(folder, group);
-    this.paintSubFolders(folder, group);
+    if (folder.open) {
+      this.paintFolderContent(folder, group);
+      this.paintSubFolders(folder, group);
+    }
   }
   public paintFolder(folder: Folder, group: THREE.Group) {
     const myGroup = new THREE.Group();
-    myGroup.add(this.folderBox(folder.name));
+    myGroup.add(this.folderBox(folder.name ? folder.name : 'root'));
     group.add(myGroup);
   }
   public paintFolderContent(folder: Folder, group: THREE.Group) {
@@ -297,7 +330,7 @@ export default class ViewImpl implements View {
       this.moveSiblingDistance(currentSubFolderGroup.position, lastNumSubFolders);
       this.moveSonDistance(currentSubFolderGroup.position);
       this.paintView(subFolder, currentSubFolderGroup);
-      this.connect(subFolder, subFoldersGroup, lastNumSubFolders);
+      // this.connect(subFolder, subFoldersGroup, lastNumSubFolders);
       subFoldersGroup.add(currentSubFolderGroup);
       lastNumSubFolders += subFolder.getNumSubFolders();
       index++;
@@ -332,8 +365,9 @@ export default class ViewImpl implements View {
     const boxGroup = new THREE.Group();
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const material = new THREE.MeshLambertMaterial({ color: theColor });
-    boxGroup.add(new THREE.Mesh(geometry, material));
-
+    const boxMesh = new THREE.Mesh(geometry, material)
+    boxMesh.name = "folder";
+    boxGroup.add(boxMesh);
     const boxName = new Text();
     boxName.text = name;
     boxName.fontSize = 0.1;
@@ -367,6 +401,7 @@ export default class ViewImpl implements View {
     const programmer = commit.commit.author.email;
 
     if (!this.programmers[programmer]) {
+
       const programmerLabel = new Text();
       programmerLabel.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
       programmerLabel.fontSize = 0.1;
@@ -387,16 +422,34 @@ export default class ViewImpl implements View {
 
       const sphereGeometry = new THREE.SphereGeometry(0.1, 10, 10);
       const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-      const lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      this.scene!.add(lightSphere);
+      //const lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+      //this.scene!.add(lightSphere);
       const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
       this.scene!.add(spotLight);
       this.programmers[programmer] = {
-        lightSphere: lightSphere,
+        //lightSphere: lightSphere,
         spotLight: spotLight,
         programmerText: programmerLabel,
-        commitText: commitLabel
+        commitText: commitLabel,
+        astronaut: new THREE.Group()
       };
+
+      const loader = new OBJLoader();
+      loader.load('../assets/11070_astronaut_v4.obj', (astronaut) => {
+        this.scene!.add(astronaut);
+        this.programmers[programmer].astronaut = astronaut;
+        // Asegúrate de que el astronauta comienza en la misma posición que la esfera de luz
+        astronaut.scale.set(.002, .002, .002);
+        // set the material of the astronaut
+        astronaut.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.material = new THREE.MeshPhongMaterial({ color: 0xddddff });
+          }
+        });
+        this.programmers[programmer].astronaut.position.copy(this.programmers[programmer].spotLight.position);
+        astronaut.rotateX(-Math.PI / 2);
+        astronaut.rotateZ(Math.PI);
+      });
     }
     this.programmers[programmer].commitText.text = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
@@ -428,19 +481,20 @@ export default class ViewImpl implements View {
 
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
-      this.programmers[programmer].lightSphere.material.color.set(0x808080);
-      const startPosition = this.programmers[programmer].lightSphere.position.clone();
-      const endPosition = this.programmers[programmer].lightSphere.position.clone();
+      // this.programmers[programmer].lightSphere.material.color.set(0x808080);
+      const startPosition = this.programmers[programmer].spotLight.position.clone();
+      const endPosition = this.programmers[programmer].spotLight.position.clone();
       endPosition.z = 2;
       this.tween = new Tween(startPosition)
         .to(endPosition, 1000)
         .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
+          // this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
           this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
           this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].astronaut.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
 
         })
         .onComplete(() => {
@@ -451,21 +505,22 @@ export default class ViewImpl implements View {
   }
   public moveProgrammerToWorkOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
-      const startPosition = this.programmers[programmer].lightSphere.position.clone();
-      const endPosition = this.programmers[programmer].lightSphere.position.clone();
+      const startPosition = this.programmers[programmer].spotLight.position.clone();
+      const endPosition = this.programmers[programmer].spotLight.position.clone();
       endPosition.z = 1;
       this.tween = new Tween(startPosition)
         .to(endPosition, 200)
         // .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
+          // this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
           this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
           this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
           this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].astronaut.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
         })
         .onComplete(() => {
-          this.programmers[programmer].lightSphere.material.color.set(0xff00ff);
+          // this.programmers[programmer].lightSphere.material.color.set(0xff00ff);
           resolve();
         })
         .start();
@@ -473,18 +528,19 @@ export default class ViewImpl implements View {
   }
 
   async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3) {
-    const startPosition = this.programmers[programmer].lightSphere.position.clone();
+    const startPosition = this.programmers[programmer].spotLight.position.clone();
     const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 1, targetPosition.z + 2);
     await new Promise<void>(resolve => {
       this.tween = new Tween(startPosition)
         .to(endPosition, 1000)
         .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, 1);
+          // this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, 1);
           this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, 1);
           this.programmers[programmer].spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
           this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, 1 + 0.1);
           this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, 1 + 0.1);
+          this.programmers[programmer].astronaut.position.set(startPosition.x, startPosition.y - 0.3, 1 + 0.1);
         })
         .onComplete(() => {
           resolve();
@@ -496,7 +552,7 @@ export default class ViewImpl implements View {
 
   fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3) {
     const points = [];
-    points.push(new THREE.Vector3(this.programmers[programmer].lightSphere.position.x, this.programmers[programmer].lightSphere.position.y, this.programmers[programmer].lightSphere.position.z));
+    points.push(new THREE.Vector3(this.programmers[programmer].spotLight.position.x, this.programmers[programmer].spotLight.position.y, this.programmers[programmer].spotLight.position.z));
     points.push(new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
