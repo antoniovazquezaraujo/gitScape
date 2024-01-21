@@ -437,15 +437,12 @@ export default class ViewImpl implements View {
   public fileBox(name: string) {
     return this.newBox("file", this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth);
   }
+
   public newBox(type: string, theColor: any, name: string = "unnamed", width: number, height: number, depth: number) {
-    const boxGroup: any = new THREE.Group();
+
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const material = new THREE.MeshLambertMaterial({ color: theColor });
     const boxMesh = new THREE.Mesh(geometry, material)
-    boxMesh.userData.elementType = type;
-    boxMesh.userData.elementName = name;
-
-    boxGroup.add(boxMesh);
 
     const boxName = new Text();
     boxName.text = name;
@@ -454,7 +451,13 @@ export default class ViewImpl implements View {
     boxName.anchorX = 'center';
     boxName.position.set(0, 0, (depth / 2) + 0.03);
     boxName.sync();
+    const boxGroup: any = new THREE.Group();
+    boxGroup.add(boxMesh);
     boxGroup.add(boxName);
+    boxGroup.userData.elementType = type;
+    boxGroup.userData.elementName = name;
+    boxGroup.userData.box = boxMesh;
+    boxGroup.userData.text = boxName;
     return boxGroup;
   }
   public getComplementaryColor(hexColor: any) {
@@ -616,11 +619,14 @@ export default class ViewImpl implements View {
     });
   }
 
-  async makeFileGlow(fileMesh: THREE.Mesh) {
-    const originalMaterial = fileMesh.material;
-    const glowingMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Cambia el color según lo necesites
-    fileMesh.material = glowingMaterial;
-    await new Promise(resolve => setTimeout(resolve, 300));
-    fileMesh.material = originalMaterial;
+  // this method works only sometimes !
+  async makeFileGlow(boxGroup: THREE.Group) {
+    const originalMaterial = boxGroup.userData.box.material;
+    const glowingMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, opacity: 0.01 }); // Cambia el color según lo necesites
+    boxGroup.userData.box.material = glowingMaterial;
+    await new Promise<void>(resolve => setTimeout(() => {
+      boxGroup.userData.box.material = originalMaterial;
+      resolve();
+    }, 100));
   }
 }
