@@ -414,7 +414,7 @@ export class Folder {
     let total = 1;
     if (this.open) {
       for (let subFolder of this.subFolders) {
-        total += subFolder.getNumSubFolders();
+        total += subFolder.getNumOpenSubFolders();
       }
     }
     return total;

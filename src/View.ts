@@ -38,7 +38,7 @@ export default class ViewImpl implements View {
   private folderWidth = 1;
   private folderHeight = .3;
   private folderPanelDepth = 0.05;
-
+  private closedFolderTriangleSize: number = 0.1;
   private fileWidth = 1;
   private fileHeight = .3;
   private filePanelDepth = 0.1;
@@ -48,7 +48,7 @@ export default class ViewImpl implements View {
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer | undefined;
-  private interactionManager: InteractionManager;
+  private interactionManager!: InteractionManager;
   private tween!: Tween<THREE.Vector3>;
   private controls: OrbitControls | undefined;
   private folder!: Folder;
@@ -62,6 +62,7 @@ export default class ViewImpl implements View {
   private slider!: HTMLInputElement;
   private dateInput!: HTMLInputElement;
   private visiblePullRequests: Set<string> = new Set<string>();
+  private repaintAll: boolean = false;
   private programmers: {
     [programmer: string]: {
       //spotLight: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
@@ -132,24 +133,6 @@ export default class ViewImpl implements View {
       this.camera,
       this.renderer!.domElement
     );
-    // const raycaster = new THREE.Raycaster();
-    // const mouse = new THREE.Vector2();
-    // window.addEventListener('click', (event) => {
-    //   // Actualiza la posición del mouse
-    //   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    //   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-    //   // Actualiza el rayo con la cámara y la posición del mouse
-    //   raycaster.setFromCamera(mouse, this.camera);
-
-    //   // Calcula los objetos que intersectan
-    //   const intersects = raycaster.intersectObjects(this.scene.children, true);
-
-    //   if (intersects.length > 0) {
-    //     console.log(intersects[0].object.userData.path);
-
-    //   }
-    // }, false);
     this.model.onChange(EventType.FolderChange, () => this.onFolderChange());
     this.model.onChange(EventType.RepositoryChange, () => this.onRepositoryChange());
     this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
@@ -215,8 +198,12 @@ export default class ViewImpl implements View {
     this.dateInput.value = datetime.toLocaleString();
   }
   private onFolderChange() {
+    this.repaintAll = true;
+  }
+  private doRepaintAll() {
     this.clearScene();
     this.paintView(this.model.getFolder(), this.treeGroup);
+    this.repaintAll = false;
   }
   private onRepositoryChange() {
     this.slider.max = (this.model.getCommitCount() - 1).toString();
@@ -294,12 +281,23 @@ export default class ViewImpl implements View {
     this.tween.update();
     this.interactionManager.update();
     this.renderer!.render(this.scene!, this.camera!);
+    if (this.repaintAll) {
+      this.doRepaintAll();
+    }
   }
 
   public async clearScene() {
+    this.interactionManager.dispose();
+    this.interactionManager = new InteractionManager(
+      this.renderer!,
+      this.camera,
+      this.renderer!.domElement
+    );
+    this.elements = {};
     this.scene!.remove(this.treeGroup);
     this.treeGroup = new THREE.Group();
     this.scene!.add(this.treeGroup);
+
   }
 
 
@@ -321,26 +319,49 @@ export default class ViewImpl implements View {
     const folderBox = this.folderBox(folder.name ? folder.name : 'root');
     // if folder is closed, draw a diagonal line in the upper right corner
     if (!folder.open) {
-      const points = [];
-      points.push(new THREE.Vector3(this.folderWidth/4, this.folderHeight/2, 0.05));
-      points.push(new THREE.Vector3(this.folderWidth/2, 0, 0.05));
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-      const lineMaterial = new THREE.LineBasicMaterial({ color: this.fileBorderColor });
-      const line = new THREE.Line(lineGeometry, lineMaterial);
-      folderBox.add(line);
+      // const points = [];
+      // points.push(new THREE.Vector3(this.folderWidth / 4, this.folderHeight / 2, 0.05));
+      // points.push(new THREE.Vector3(this.folderWidth / 2, 0, 0.05));
+      // const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      // const lineMaterial = new THREE.LineBasicMaterial({ color: this.fileBorderColor });
+      // const line = new THREE.Line(lineGeometry, lineMaterial);
+      // myGroup.add(line);
+
+
+      // Crear una forma de triángulo
+      const shape = new THREE.Shape();
+      shape.moveTo(this.folderWidth / 2, this.folderHeight / 2);
+      shape.lineTo(this.folderWidth / 2, this.folderHeight / 2 - this.closedFolderTriangleSize);
+      shape.lineTo(this.folderWidth / 2 - this.closedFolderTriangleSize, this.folderHeight / 2);
+      shape.lineTo(this.folderWidth / 2, this.folderHeight / 2);
+
+      // Crear una geometría a partir de la forma
+      const geometry = new THREE.ShapeGeometry(shape);
+
+
+      // Crear un material
+      const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Rojo
+
+      // Crear un mesh y añadirlo al grupo
+      const triangle = new THREE.Mesh(geometry, material);
+      triangle.position.z = 0.05;
+      myGroup.add(triangle);
     }
+    this.interactionManager.add(folderBox);
+
     folderBox.addEventListener('click', (event) => {
       console.log(folder.getPath());
-      event.cancelBubble = true;
+      console.log(event.target.children[0].userData.elementName);
+
       if (folder.open) {
-        folder.open = false;       
+        folder.open = false;
       } else {
         folder.open = true;
       }
-      this.clearScene();
-      this.paintView(this.model.getFolder(), this.treeGroup);
+      this.onFolderChange();
+      event.cancelBubble = true;
+      event.stopPropagation();
     });
-    this.interactionManager.add(folderBox);
     myGroup.add(folderBox);
     group.add(myGroup);
   }
@@ -370,7 +391,7 @@ export default class ViewImpl implements View {
     this.elements[path] = fileBox;
     fileBox.addEventListener('click', (event) => {
       console.log(path);
-      event.stopPropagation();
+      event.cancelBubble = true;
     });
     this.interactionManager.add(fileBox);
     myGroup.add(fileBox);
@@ -378,8 +399,7 @@ export default class ViewImpl implements View {
   }
   public paintSubFolders(folder: Folder, group: THREE.Group) {
     const subFoldersGroup = new THREE.Group();
-    let lastNumOpenSubFolders = folder.open ? 1 : 0;
-    //let index = 1;
+    let lastNumOpenSubFolders = 1; //folder.open ? 1 : 0;
     for (const subFolder of folder.subFolders) {
       const currentSubFolderGroup = new THREE.Group();
       this.moveSiblingDistance(currentSubFolderGroup.position, lastNumOpenSubFolders);
@@ -388,7 +408,6 @@ export default class ViewImpl implements View {
       this.connect(subFolder, subFoldersGroup, lastNumOpenSubFolders);
       subFoldersGroup.add(currentSubFolderGroup);
       lastNumOpenSubFolders += subFolder.getNumOpenSubFolders();
-      //index++;
     }
     group.add(subFoldersGroup);
   }
