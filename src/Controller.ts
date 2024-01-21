@@ -23,14 +23,16 @@ export class ControllerImpl implements Controller {
   }
 
   initialize(): void {
+    this.view.setController(this);
     this.model.initialize();
+    this.view.setModel(this.model);
     this.view.initialize();
   }
 
   commitIndexChanged(index: number): void {
     this.view.setStopped();
     this.model.setCommitIndex(index);
-    this.model.reloadDirectory();
+    this.model.reloadFolder();
   }
   startSelected(): void {
     this.looping = true;
