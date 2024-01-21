@@ -1,5 +1,6 @@
 import { Easing, Tween } from '@tweenjs/tween.js';
 import * as THREE from 'three';
+import { InteractionManager } from 'three.interactive';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Text } from 'troika-three-text';
 
@@ -47,11 +48,13 @@ export default class ViewImpl implements View {
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer | undefined;
+  private interactionManager: InteractionManager;
   private tween!: Tween<THREE.Vector3>;
   private controls: OrbitControls | undefined;
   private folder!: Folder;
   private controller!: Controller;
   private model!: Model;
+  private astronaut!: THREE.Group<THREE.Object3DEventMap>;
   private elements: { [path: string]: THREE.Group } = {};
   private treeGroup!: THREE.Group<THREE.Object3DEventMap>;
   private ambientLight!: THREE.AmbientLight;
@@ -65,7 +68,8 @@ export default class ViewImpl implements View {
       spotLight: THREE.SpotLight,
       programmerText: Text,
       commitText: Text,
-      astronaut: THREE.Group<THREE.Object3DEventMap>
+      astronaut: THREE.Group<THREE.Object3DEventMap>,
+      group: THREE.Group<THREE.Object3DEventMap>
     }
   } = {};
   private pullRequests: {
@@ -93,6 +97,7 @@ export default class ViewImpl implements View {
     this.createScene();
     this.createCamera();
     this.createLights();
+    this.createAstronaut();
     this.createTween();
     this.createRenderer();
     this.createOrbitControls();
@@ -104,31 +109,47 @@ export default class ViewImpl implements View {
     this.start();
   }
 
-  private addEventListeners() {
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    window.addEventListener('click', (event) => {
-      // Actualiza la posición del mouse
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  async createAstronaut() {
+    const loader = new OBJLoader();
+    const astronaut: THREE.Group = await new Promise((resolve, reject) => {
+      loader.load('../assets/11070_astronaut_v4.obj', resolve, undefined, reject);
+    });
 
-      // Actualiza el rayo con la cámara y la posición del mouse
-      raycaster.setFromCamera(mouse, this.camera);
-
-      // Calcula los objetos que intersectan
-      const intersects = raycaster.intersectObjects(this.scene.children, true);
-
-      if (intersects.length > 0) {
-        // El primer objeto intersectado es el más cercano
-        const object = intersects[0].object;
-        const folder = object.getObjectByName('folder');
-        folder?.children.forEach((child) => {
-          if (child instanceof Text) {
-            console.log(child);
-          }
-        });
+    astronaut.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.material = new THREE.MeshPhongMaterial({ color: 0xddddff });
       }
-    }, false);
+    });
+
+    astronaut.scale.set(.002, .002, .002);
+    astronaut.rotateX(-Math.PI / 2);
+    astronaut.rotateZ(Math.PI);
+    this.astronaut = astronaut;
+  }
+  private addEventListeners() {
+    this.interactionManager = new InteractionManager(
+      this.renderer!,
+      this.camera,
+      this.renderer!.domElement
+    );
+    // const raycaster = new THREE.Raycaster();
+    // const mouse = new THREE.Vector2();
+    // window.addEventListener('click', (event) => {
+    //   // Actualiza la posición del mouse
+    //   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    //   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    //   // Actualiza el rayo con la cámara y la posición del mouse
+    //   raycaster.setFromCamera(mouse, this.camera);
+
+    //   // Calcula los objetos que intersectan
+    //   const intersects = raycaster.intersectObjects(this.scene.children, true);
+
+    //   if (intersects.length > 0) {
+    //     console.log(intersects[0].object.userData.path);
+
+    //   }
+    // }, false);
     this.model.onChange(EventType.FolderChange, () => this.onFolderChange());
     this.model.onChange(EventType.RepositoryChange, () => this.onRepositoryChange());
     this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
@@ -271,6 +292,7 @@ export default class ViewImpl implements View {
     window.requestAnimationFrame(() => this.animate());
     this.controls!.update();
     this.tween.update();
+    this.interactionManager.update();
     this.renderer!.render(this.scene!, this.camera!);
   }
 
@@ -293,8 +315,33 @@ export default class ViewImpl implements View {
     }
   }
   public paintFolder(folder: Folder, group: THREE.Group) {
-    const myGroup = new THREE.Group();
-    myGroup.add(this.folderBox(folder.name ? folder.name : 'root'));
+    const myGroup: THREE.Object3D = new THREE.Group();
+    myGroup.userData.type = 'folder';
+    myGroup.userData.path = folder.getPath();
+    const folderBox = this.folderBox(folder.name ? folder.name : 'root');
+    // if folder is closed, draw a diagonal line in the upper right corner
+    if (!folder.open) {
+      const points = [];
+      points.push(new THREE.Vector3(this.folderWidth/4, this.folderHeight/2, 0.05));
+      points.push(new THREE.Vector3(this.folderWidth/2, 0, 0.05));
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const lineMaterial = new THREE.LineBasicMaterial({ color: this.fileBorderColor });
+      const line = new THREE.Line(lineGeometry, lineMaterial);
+      folderBox.add(line);
+    }
+    folderBox.addEventListener('click', (event) => {
+      console.log(folder.getPath());
+      event.cancelBubble = true;
+      if (folder.open) {
+        folder.open = false;       
+      } else {
+        folder.open = true;
+      }
+      this.clearScene();
+      this.paintView(this.model.getFolder(), this.treeGroup);
+    });
+    this.interactionManager.add(folderBox);
+    myGroup.add(folderBox);
     group.add(myGroup);
   }
   public paintFolderContent(folder: Folder, group: THREE.Group) {
@@ -316,24 +363,32 @@ export default class ViewImpl implements View {
   }
   public paintFile(name: string, group: THREE.Group, path: string) {
     const myGroup = new THREE.Group();
+    myGroup.userData.elementName = path;
+    myGroup.userData.elementType = 'file';
+    myGroup.userData.path = path;
     const fileBox = this.fileBox(name);
     this.elements[path] = fileBox;
+    fileBox.addEventListener('click', (event) => {
+      console.log(path);
+      event.stopPropagation();
+    });
+    this.interactionManager.add(fileBox);
     myGroup.add(fileBox);
     group.add(myGroup);
   }
   public paintSubFolders(folder: Folder, group: THREE.Group) {
     const subFoldersGroup = new THREE.Group();
-    let lastNumSubFolders = 1;
-    let index = 1;
+    let lastNumOpenSubFolders = folder.open ? 1 : 0;
+    //let index = 1;
     for (const subFolder of folder.subFolders) {
       const currentSubFolderGroup = new THREE.Group();
-      this.moveSiblingDistance(currentSubFolderGroup.position, lastNumSubFolders);
+      this.moveSiblingDistance(currentSubFolderGroup.position, lastNumOpenSubFolders);
       this.moveSonDistance(currentSubFolderGroup.position);
       this.paintView(subFolder, currentSubFolderGroup);
-      // this.connect(subFolder, subFoldersGroup, lastNumSubFolders);
+      this.connect(subFolder, subFoldersGroup, lastNumOpenSubFolders);
       subFoldersGroup.add(currentSubFolderGroup);
-      lastNumSubFolders += subFolder.getNumSubFolders();
-      index++;
+      lastNumOpenSubFolders += subFolder.getNumOpenSubFolders();
+      //index++;
     }
     group.add(subFoldersGroup);
   }
@@ -356,18 +411,23 @@ export default class ViewImpl implements View {
   }
 
   public folderBox(name: string) {
-    return this.newBox(this.folderColor, name, this.folderWidth, this.folderHeight, this.folderPanelDepth);
+    const box = this.newBox("folder", this.folderColor, name, this.folderWidth, this.folderHeight, this.folderPanelDepth);
+    return box;
+
   }
   public fileBox(name: string) {
-    return this.newBox(this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth);
+    return this.newBox("file", this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth);
   }
-  public newBox(theColor: any, name: string = "unnamed", width: number, height: number, depth: number) {
-    const boxGroup = new THREE.Group();
+  public newBox(type: string, theColor: any, name: string = "unnamed", width: number, height: number, depth: number) {
+    const boxGroup: any = new THREE.Group();
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const material = new THREE.MeshLambertMaterial({ color: theColor });
     const boxMesh = new THREE.Mesh(geometry, material)
-    boxMesh.name = "folder";
+    boxMesh.userData.elementType = type;
+    boxMesh.userData.elementName = name;
+
     boxGroup.add(boxMesh);
+
     const boxName = new Text();
     boxName.text = name;
     boxName.fontSize = 0.1;
@@ -377,7 +437,6 @@ export default class ViewImpl implements View {
     boxName.sync();
     boxGroup.add(boxName);
     return boxGroup;
-
   }
   public getComplementaryColor(hexColor: any) {
     let decimalColor = parseInt(hexColor, 16);
@@ -401,55 +460,7 @@ export default class ViewImpl implements View {
     const programmer = commit.commit.author.email;
 
     if (!this.programmers[programmer]) {
-
-      const programmerLabel = new Text();
-      programmerLabel.text = programmer; // Establece el texto a la dirección de correo electrónico del programador
-      programmerLabel.fontSize = 0.1;
-      programmerLabel.color = 0xff0066; // Cambia esto al color que desees
-      programmerLabel.anchorX = 'center';
-      programmerLabel.position.y = 0.1; // Ajusta esto para cambiar la posición de la etiqueta sobre la esfera
-      programmerLabel.sync();
-      this.scene!.add(programmerLabel);
-
-      const commitLabel = new Text();
-      commitLabel.text = "";
-      commitLabel.fontSize = 0.1;
-      commitLabel.color = 0xff0066;
-      commitLabel.anchorX = 'center';
-      commitLabel.position.y = -0.3;
-      commitLabel.sync();
-      this.scene!.add(commitLabel);
-
-      const sphereGeometry = new THREE.SphereGeometry(0.1, 10, 10);
-      const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-      //const lightSphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-      //this.scene!.add(lightSphere);
-      const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
-      this.scene!.add(spotLight);
-      this.programmers[programmer] = {
-        //lightSphere: lightSphere,
-        spotLight: spotLight,
-        programmerText: programmerLabel,
-        commitText: commitLabel,
-        astronaut: new THREE.Group()
-      };
-
-      const loader = new OBJLoader();
-      loader.load('../assets/11070_astronaut_v4.obj', (astronaut) => {
-        this.scene!.add(astronaut);
-        this.programmers[programmer].astronaut = astronaut;
-        // Asegúrate de que el astronauta comienza en la misma posición que la esfera de luz
-        astronaut.scale.set(.002, .002, .002);
-        // set the material of the astronaut
-        astronaut.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.material = new THREE.MeshPhongMaterial({ color: 0xddddff });
-          }
-        });
-        this.programmers[programmer].astronaut.position.copy(this.programmers[programmer].spotLight.position);
-        astronaut.rotateX(-Math.PI / 2);
-        astronaut.rotateZ(Math.PI);
-      });
+      this.createProgrammer(programmer);
     }
     this.programmers[programmer].commitText.text = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
@@ -479,23 +490,52 @@ export default class ViewImpl implements View {
     });
   }
 
+  private createProgrammer(programmer: any) {
+    const programmerGroup = new THREE.Group();
+    const programmerLabel = new Text();
+    programmerLabel.text = programmer;
+    programmerLabel.fontSize = 0.1;
+    programmerLabel.color = 0xff0066;
+    programmerLabel.anchorX = 'center';
+    programmerLabel.position.y = 0.1;
+    programmerLabel.sync();
+    programmerGroup.add(programmerLabel);
+
+    const commitLabel = new Text();
+    commitLabel.text = "";
+    commitLabel.fontSize = 0.1;
+    commitLabel.color = 0xff0066;
+    commitLabel.anchorX = 'center';
+    commitLabel.position.y = -0.3;
+    commitLabel.sync();
+    programmerGroup.add(commitLabel);
+
+    const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
+    programmerGroup.add(spotLight);
+    const astronaut = this.astronaut.clone();
+    programmerGroup.add(astronaut);
+
+    this.programmers[programmer] = {
+      spotLight: spotLight,
+      programmerText: programmerLabel,
+      commitText: commitLabel,
+      astronaut: astronaut,
+      group: programmerGroup
+    };
+    this.scene.add(programmerGroup);
+  }
+
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
       // this.programmers[programmer].lightSphere.material.color.set(0x808080);
-      const startPosition = this.programmers[programmer].spotLight.position.clone();
-      const endPosition = this.programmers[programmer].spotLight.position.clone();
+      const startPosition = this.programmers[programmer].group.position.clone();
+      const endPosition = this.programmers[programmer].group.position.clone();
       endPosition.z = 2;
       this.tween = new Tween(startPosition)
         .to(endPosition, 1000)
         .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          // this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
-          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
-          this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
-          this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
-          this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
-          this.programmers[programmer].astronaut.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
-
+          this.programmers[programmer].group.position.set(startPosition.x, startPosition.y, startPosition.z);
         })
         .onComplete(() => {
           resolve();
@@ -505,19 +545,13 @@ export default class ViewImpl implements View {
   }
   public moveProgrammerToWorkOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
-      const startPosition = this.programmers[programmer].spotLight.position.clone();
-      const endPosition = this.programmers[programmer].spotLight.position.clone();
+      const startPosition = this.programmers[programmer].group.position.clone();
+      const endPosition = this.programmers[programmer].group.position.clone();
       endPosition.z = 1;
       this.tween = new Tween(startPosition)
         .to(endPosition, 200)
-        // .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          // this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, startPosition.z);
-          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, startPosition.z);
-          this.programmers[programmer].spotLight.target.position.set(endPosition.x, endPosition.y, endPosition.z);
-          this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, startPosition.z + 0.1);
-          this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
-          this.programmers[programmer].astronaut.position.set(startPosition.x, startPosition.y - 0.3, startPosition.z + 0.1);
+          this.programmers[programmer].group.position.set(startPosition.x, startPosition.y, startPosition.z);
         })
         .onComplete(() => {
           // this.programmers[programmer].lightSphere.material.color.set(0xff00ff);
@@ -528,41 +562,39 @@ export default class ViewImpl implements View {
   }
 
   async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3) {
-    const startPosition = this.programmers[programmer].spotLight.position.clone();
-    const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 1, targetPosition.z + 2);
+    const startPosition = this.programmers[programmer].group.position.clone();
+    const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 0.5, targetPosition.z + 2);
     await new Promise<void>(resolve => {
       this.tween = new Tween(startPosition)
         .to(endPosition, 1000)
         .easing(Easing.Cubic.InOut)
         .onUpdate(() => {
-          // this.programmers[programmer].lightSphere.position.set(startPosition.x, startPosition.y, 1);
-          this.programmers[programmer].spotLight.position.set(startPosition.x, startPosition.y, 1);
-          this.programmers[programmer].spotLight.target.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
-          this.programmers[programmer].programmerText.position.set(startPosition.x, startPosition.y + 0.3, 1 + 0.1);
-          this.programmers[programmer].commitText.position.set(startPosition.x, startPosition.y - 0.3, 1 + 0.1);
-          this.programmers[programmer].astronaut.position.set(startPosition.x, startPosition.y - 0.3, 1 + 0.1);
+          this.programmers[programmer].group.position.set(startPosition.x, startPosition.y, 1);
         })
         .onComplete(() => {
           resolve();
         })
         .start();
     });
-    this.fireProgrammerRay(programmer, targetPosition);
+    await this.fireProgrammerRay(programmer, targetPosition);
   }
 
-  fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3) {
+  async fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3) {
     const points = [];
-    points.push(new THREE.Vector3(this.programmers[programmer].spotLight.position.x, this.programmers[programmer].spotLight.position.y, this.programmers[programmer].spotLight.position.z));
+    points.push(new THREE.Vector3(this.programmers[programmer].group.position.x, this.programmers[programmer].group.position.y + 0.25, this.programmers[programmer].group.position.z));
     points.push(new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
     const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
     const line = new THREE.Line(lineGeometry, lineMaterial);
     this.scene!.add(line);
     this.programmers[programmer].spotLight.intensity = 1;
-    setTimeout(() => {
-      this.scene!.remove(line);
-      this.programmers[programmer].spotLight.intensity = 0;
-    }, 500);
+    await new Promise<void>(resolve => {
+      setTimeout(() => {
+        this.scene!.remove(line);
+        this.programmers[programmer].spotLight.intensity = 0;
+        resolve();
+      }, 300);
+    });
   }
 
   async makeFileGlow(fileMesh: THREE.Mesh) {

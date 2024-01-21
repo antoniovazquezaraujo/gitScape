@@ -399,7 +399,7 @@ export class TreeNode {
 export class Folder {
   name: string;
   parent: Folder | null;
-  subFolders: Folder[]; 
+  subFolders: Folder[];
   files: string[];
   open: boolean;
 
@@ -410,6 +410,16 @@ export class Folder {
     this.files = [];
     this.open = true;
   }
+  public getNumOpenSubFolders(): number {
+    let total = 1;
+    if (this.open) {
+      for (let subFolder of this.subFolders) {
+        total += subFolder.getNumSubFolders();
+      }
+    }
+    return total;
+  }
+
   public getNumSubFolders(): number {
     let total = 1;
     for (let subFolder of this.subFolders) {
@@ -417,10 +427,10 @@ export class Folder {
     }
     return total;
   }
-  public getNumFiles(){
+  public getNumFiles() {
     return this.files.length;
   }
-  public getParent(){
+  public getParent() {
     return this.parent;
   }
 
