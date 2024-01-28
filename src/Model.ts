@@ -1,58 +1,39 @@
-import { Octokit } from '@octokit/rest';
+// import { Octokit } from '@octokit/rest';
+import { GitModel, GitModelImpl } from './GitModel';
 
 export enum EventType {
   RepositoryChange = 'repositoryChange',
-  FolderChange = 'folderChange',
+  TreeNodeChange = 'treeNodeChange',
   CurrentCommitChange = 'currentCommitChange'
 }
 export interface Model {
   initialize(): void;
-
-  // notificamos de cambio de repositorio, directorio y commit
   onChange(eventType: EventType, callback: () => void): void;
   notifyObservers(eventType: EventType): void;
-
-  reloadFolder(): void;
+  reload(): void;
+  getNode(): TreeNode;
+  addElement(path: string, isFile: boolean): void;
+  addTreeNode(commitSha: string, file: any): void;
+  removeElement(path: string): void;
   setCommitIndex(index: number): void;
   getCommitIndex(): number;
-  getCommit(index: number): any;
-  getFirstCommit(): any;
-  getLastCommit(): any;
-  getCurrentCommit(): any;
   getCommitCount(): number;
-  getCurrentCommitDate(): Date;
+  getCurrentCommit(): any;
+  getPullRequestForCommit(commit_sha: string): any;
   getCommitFiles(ref: string): Promise<any>;
-  getFileInfo(file: any): any;
-  getFolder(): Folder;
-  addElement(path: string, isFile: boolean): void;
-  addFileOrFolder(commitSha: string, file: any): void;
-  removeElement(path: string): void;
-  getPullRequestForCommit(commitSha: string): any;
 }
 
-export class ModelImpl implements Model {
-  private githubToken!: string;
-  private octokit!: Octokit;
-  private owner!: string;
-  private repo!: string;
-  private allCommits: any[] = [];
-  // Add a property to store all pull requests
-  private allPullRequests: any[];
-  // Add a map to store the commits of each pull request
-  private pullRequestCommits: Map<number, any[]>;
-  // Add a map to link each commit to its pull request
-  private commitToPullRequest: Map<string, any>;
 
-  private folder: Folder | undefined;
-  private commitIndex: number = 0;
+export class ModelImpl implements Model {
+  gitModel: GitModel;
+
+  private root: TreeNode | undefined;
   private observers: { [key in EventType]?: (() => void)[] } = {};
 
   constructor() {
     this.observers = {};
-    this.folder = new Folder('');
-    this.allPullRequests = [];
-    this.pullRequestCommits = new Map();
-    this.commitToPullRequest = new Map();
+    this.root = new TreeNode('');
+    this.gitModel = new GitModelImpl();
   }
   onChange(eventType: EventType, callback: () => void): void {
     if (!this.observers[eventType]) {
@@ -72,104 +53,48 @@ export class ModelImpl implements Model {
   }
 
   public async initialize() {
-    this.createOctokit();
-    await this.reloadAllRepositoryCommits();
-    await this.initializePullRequests();
-    this.loadInitialEmptyFolder();
-    this.setCommitIndex(0);
+    this.gitModel.initialize();
+    this.loadInitialEmptyTreeNode();
   }
-  async initializePullRequests() {
-    try {
-      this.allPullRequests = await this.getAllPullRequests();
-
-      // Get the commits of each pull request
-      for (const pr of this.allPullRequests) {
-        const commits = await this.octokit.paginate(this.octokit.pulls.listCommits.endpoint.merge({
-          owner: this.owner,
-          repo: this.repo,
-          pull_number: pr.number,
-          per_page: 100,
-        }));
-
-        // Store the commits in the map
-        this.pullRequestCommits.set(pr.number, commits);
-
-        // Link each commit to its pull request
-        let commit: any = {};
-        for (commit of commits) {
-          this.commitToPullRequest.set(commit.sha, pr);
-        }
-      }
-    } catch (error) {
-      console.error(error);
+  public loadInitialEmptyTreeNode() {
+    this.root = new TreeNode('');
+    this.notifyObservers(EventType.TreeNodeChange);
+  }
+  public async reload() {
+    if (this.gitModel.getCommitIndex() === 0) {
+      this.root = new TreeNode('');
+    } else {
+      const data = await this.gitModel.getTreeAtCommit(this.gitModel.getPreviousCommit().sha);
+      this.root = this.createTreeNodeFromCommit(data);
     }
-  }
-  public getPullRequest(number: number) {
-    return this.allPullRequests[number];
-  }
-  public getPullRequestForCommit(commitSha: string): any {
-    // Get the pull request from the map
-    return this.commitToPullRequest.get(commitSha);
-  }
-  public loadInitialEmptyFolder() {
-    this.folder = new Folder('');
-    this.notifyObservers(EventType.FolderChange);
-  }
-  public async reloadFolder() {
-    const treeNode = this.commitIndex === 0 ? new TreeNode('') : await this.getTreeAtCommit(this.allCommits[this.commitIndex - 1].sha);
-    this.folder = this.createFolder(treeNode, null);
-    this.notifyObservers(EventType.FolderChange);
-  }
-
-  private createOctokit(): void {
-    this.githubToken = import.meta.env.VITE_GITHUB_TOKEN;
-    this.octokit = new Octokit({
-      auth: this.githubToken,
-    });
-    this.owner = 'antoniovazquezaraujo';
-    this.repo = 'letrain';
+    this.notifyObservers(EventType.TreeNodeChange);
   }
 
   public setCommitIndex(index: number) {
-    this.commitIndex = index;
+    this.gitModel.setCommitIndex(index);
     this.notifyObservers(EventType.CurrentCommitChange);
   }
   public getCommitIndex(): number {
-    return this.commitIndex;
-  }
-
-  public getCommit(index: number) {
-    return this.allCommits[index];
-  }
-  public getFirstCommit() {
-    return this.allCommits[0];
-  }
-  public getLastCommit() {
-    return this.allCommits[this.allCommits.length - 1];
-  }
-  public getCurrentCommit() {
-    return this.allCommits[this.commitIndex];
+    return this.gitModel.getCommitIndex();
   }
   public getCommitCount(): number {
-    return this.allCommits.length;
-  }
-  public getCurrentCommitDate(): Date {
-    return new Date(this.allCommits[this.commitIndex].commit.author.date);
+    return this.gitModel.getCommitCount();
   }
   public async getFileInfo(filename: string): Promise<any> {
-    const files = await this.getCommitFiles(this.getCurrentCommit())
+    const files = await this.getCommitFiles(this.gitModel.getCurrentCommit())
     const file = await files.find((f: any) => f.filename === filename);
     if (file) {
       return file;
     }
     return null;
   }
-  // Obtiene una estructura de Folder a partir de un TreeNode
-  public getFolder(): Folder {
-    return this.folder!;
+
+  public getNode(): TreeNode {
+    return this.root!;
   }
-  public async addFileOrFolder(commitSha: string, file: any): Promise<void> {
-    const treeNode = await this.getTreeAtCommit(commitSha);
+  public async addTreeNode(commitSha: string, file: any): Promise<void> {
+    const data = await this.gitModel.getTreeAtCommit(commitSha);
+    const treeNode = this.createTreeNodeFromCommit(data);
     const found = treeNode.find(file.filename);
     if (found) {
       if (found.isFile) {
@@ -182,85 +107,46 @@ export class ModelImpl implements Model {
 
   public addElement(path: string, isFile: boolean): void {
     const pathComponents = path.split('/');
-    let currentFolder = this.folder!;
+    let currentRootNode = this.root!;
 
     for (let i = 0; i < pathComponents.length - 1; i++) {
-      const subFolderName = pathComponents[i];
-      let subFolder = currentFolder.children[subFolderName];
-      if (!subFolder) {
-        subFolder = new Folder(subFolderName, false, currentFolder);
-        currentFolder.addTreeNode(subFolder);
+      const pathComponent = pathComponents[i];
+      let treeNode = currentRootNode.children[pathComponent];
+      if (!treeNode) {
+        treeNode = new TreeNode(pathComponent, false, currentRootNode);
+        currentRootNode.addTreeNode(treeNode);
       }
-      currentFolder = subFolder;
+      currentRootNode = treeNode;
     }
 
     const newNodeName = pathComponents[pathComponents.length - 1];
-    const newNode = new TreeNode(newNodeName, isFile, currentFolder, {});
-    if (!currentFolder.children[newNodeName]) {
-      currentFolder.addTreeNode(newNode);
-      this.notifyObservers(EventType.FolderChange);
+    const newNode = new TreeNode(newNodeName, isFile, currentRootNode, {});
+    if (!currentRootNode.children[newNodeName]) {
+      currentRootNode.addTreeNode(newNode);
+      this.notifyObservers(EventType.TreeNodeChange);
     }
   }
   public removeElement(path: string): void {
     const parentPath = path.substring(0, path.lastIndexOf('/'));
     const elementName = path.substring(path.lastIndexOf('/') + 1);
-    const folder = this.findFolderByPath(this.folder!, parentPath);
-    if (folder) {
-      if (folder.children[elementName]) {
-        folder.removeTreeNode(folder.children[elementName]);
+    const node = this.findTreeNodeByPath(this.root!, parentPath);
+    if (node) {
+      if (node.children[elementName]) {
+        node.removeTreeNode(node.children[elementName]);
       }
     }
-    this.notifyObservers(EventType.FolderChange);
+    this.notifyObservers(EventType.TreeNodeChange);
   }
 
-  ////////////////// IMPLEMENTATION /////////////////////////////////
-  // obtiene todos los commits de un repositorio
-  private async reloadAllRepositoryCommits(): Promise<void> {
-    const perPage = 10; // Máximo permitido por la API de GitHub
-    let page = 0;
-    this.allCommits = [];
-
-    while (true) {
-      const { data: commits } = await this.octokit.repos.listCommits({
-        owner: this.owner,
-        repo: this.repo,
-        per_page: perPage,
-        page: page,
-        sha: 'develop'
-      });
-
-      this.allCommits = this.allCommits.concat(commits);
-      if (commits.length < perPage) {
-        break;
-      }
-      page++;
-    }
-    this.allCommits.reverse();
-    this.notifyObservers(EventType.RepositoryChange);
-
-  }
-
-  private async getAllCommits() {
-    return this.allCommits;
-  }
-
-
-  // Obtiene un TreeNode a partir de un commit
-  private async getTreeAtCommit(ref: string): Promise<TreeNode> {
+  private createTreeNodeFromCommit(data: any) {
     const root = new TreeNode('');
-    const { data } = await this.octokit.git.getTree({
-      owner: this.owner,
-      repo: this.repo,
-      tree_sha: ref,
-      recursive: '1',
-    });
-
     data.tree.forEach((item: any) => {
       let currentNode = root;
       const pathParts = item.path.split('/');
       pathParts.forEach((part: string, index: number) => {
         if (!currentNode.children[part]) {
           currentNode.children[part] = new TreeNode(part);
+          currentNode.children[part].parent = currentNode;
         }
         currentNode = currentNode.children[part];
         if (index === pathParts.length - 1 && item.type === 'blob') {
@@ -268,34 +154,17 @@ export class ModelImpl implements Model {
         }
       });
     });
-
     return root;
   }
-  // Crea una estructura de Folder a partir de un TreeNode de forma recursiva
-  private createFolder(node: TreeNode, parent: Folder | null = null): Folder {
-    // const folder = new Folder(node.name, parent);
 
-    // for (let key in node.children) {
-    //   const childNode = node.children[key];
-    //   if (childNode.isFile) {
-    //     folder.addFile(childNode.name);
-    //   } else {
-    //     const subFolder = this.createFolder(childNode, folder);
-    //     folder.addSubFolder(subFolder);
-    //   }
-    // }
-    // return folder;
-    return node;
-  }
-
-  private findFolderByPath(root: Folder, path: string): Folder | null {
+  findTreeNodeByPath(root: TreeNode, path: string): TreeNode | null {
     const parts = path.split('/');
-    let currentFolder = root;
+    let currentRootNode = root;
     let found = false;
     for (let part of parts) {
       found = false;
-      if (currentFolder.children[part]) {
-        currentFolder = currentFolder.children[part];
+      if (currentRootNode.children[part]) {
+        currentRootNode = currentRootNode.children[part];
         found = true;
         break;
       }
@@ -303,96 +172,49 @@ export class ModelImpl implements Model {
     if (!found) {
       return null;
     }
-    return currentFolder;
+    return currentRootNode;
   }
 
 
   // Obtiene lof ficheros afectados por un commit
-  public async getCommitFiles(ref: string): Promise < any > {
-  try {
-    const commit = await this.octokit.repos.getCommit({
-      owner: this.owner,
-      repo: this.repo,
-      ref,
-    });
-    return commit.data.files;
-  } catch(error) {
-    console.error(error);
+  public async getCommitFiles(ref: string): Promise<any> {
+    return this.gitModel.getCommitFiles(ref);
   }
-}
 
   // Obtiene los pull requests asociados a un commit
   public async getCommitPullRequests(commit_sha: string) {
-  try {
-    const commit = await this.octokit.repos.listPullRequestsAssociatedWithCommit({
-      owner: this.owner,
-      repo: this.repo,
-      commit_sha
-    });
-    return commit.data;
-  } catch (error) {
-    console.error(error);
+    return this.gitModel.getCommitPullRequests(commit_sha);
   }
-}
 
   async getAllPullRequests() {
-  const options = this.octokit.pulls.list.endpoint.merge({
-    owner: this.owner,
-    repo: this.repo,
-    state: 'all',
-    per_page: 100, // maximum amount of results per page
-  });
-  return await this.octokit.paginate(options);
-}
+    return this.gitModel.getAllPullRequests();
+  }
 
   public async getCommitsFromUrl(url: string) {
-  try {
-    const { data: commits } = await this.octokit.request('GET ' + url);
-    return commits;
-  } catch (error) {
-    console.error(error);
+    return this.gitModel.getCommitsFromUrl(url);
+  }
+  public getCurrentCommit(): any {
+    return this.gitModel.getCurrentCommit();
+  }
+  public getPullRequestForCommit(commit_sha: string): any {
+    return this.gitModel.getPullRequestForCommit(commit_sha);
   }
 }
 
 
-}
-
-// export class TreeNode {
-//   name: string;
-//   children: { [key: string]: TreeNode; };
-//   isFile: boolean;
-
-//   constructor(name: string, isFile: boolean = false, children: { [key: string]: TreeNode; } = {}) {
-//     this.name = name;
-//     this.children = children;
-//     this.isFile = isFile;
-//   }
-//   find(path: string): TreeNode | null {
-//     const parts = path.split('/');
-//     let currentNode: TreeNode | null = this;
-//     for (const part of parts) {
-//       if (part in currentNode.children) {
-//         currentNode = currentNode.children[part];
-//       } else {
-//         return null;
-//       }
-//     }
-//     return currentNode;
-//   }
-// }
 export class TreeNode {
   name: string;
   parent: TreeNode | null;
   children: { [key: string]: TreeNode; };
   isFile: boolean;
-  open: boolean;
+  visible: boolean;
 
   constructor(name: string, isFile: boolean = false, parent: TreeNode | null = null, children: { [key: string]: TreeNode; } = {}) {
     this.name = name;
     this.parent = parent;
     this.children = children;
     this.isFile = isFile;
-    this.open = !this.isFile; // Los archivos estarán cerrados por defecto
+    this.visible = !this.isFile; // Los archivos estarán cerrados por defecto
   }
 
   find(path: string): TreeNode | null {
@@ -413,7 +235,7 @@ export class TreeNode {
     for (const part of parts) {
       let lastOpenNode = currentNode;
       if (part in currentNode.children) {
-        if (currentNode.open) {
+        if (currentNode.visible) {
           currentNode = currentNode.children[part];
           lastOpenNode = currentNode;
         } else {
@@ -426,29 +248,20 @@ export class TreeNode {
     return currentNode;
   }
 
-  getNumOpenSubFolders(): number {
-    let total = this.open ? 1 : 0;
-    for (let child of Object.values(this.children)) {
-      if (!child.isFile) {
-        total += child.getNumOpenSubFolders();
-      }
-    }
-    return total;
-  }
-
-  getNumSubFolders(): number {
+  getNumVisibleNodes(): number {
+    if (!this.visible) {
+      return 1
+    };
     let total = 1;
     for (let child of Object.values(this.children)) {
       if (!child.isFile) {
-        total += child.getNumSubFolders();
+        total += child.getNumVisibleNodes();
       }
     }
     return total;
   }
 
-  getNumFiles(): number {
-    return Object.values(this.children).filter(child => child.isFile).length;
-  }
+
   public getParent() {
     return this.parent;
   }
@@ -475,71 +288,4 @@ export class TreeNode {
     }
   }
 }
-export class Folder extends TreeNode {
-}
-// export class Folder {
-//   name: string;
-//   parent: Folder | null;
-//   subFolders: Folder[];
-//   files: string[];
-//   open: boolean;
 
-//   constructor(name: string, parent: Folder | null = null) {
-//     this.name = name;
-//     this.parent = parent;
-//     this.subFolders = [];
-//     this.files = [];
-//     this.open = true;
-//   }
-//   public getNumOpenSubFolders(): number {
-//     let total = 1;
-//     if (this.open) {
-//       for (let subFolder of this.subFolders) {
-//         total += subFolder.getNumOpenSubFolders();
-//       }
-//     }
-//     return total;
-//   }
-
-//   public getNumSubFolders(): number {
-//     let total = 1;
-//     for (let subFolder of this.subFolders) {
-//       total += subFolder.getNumSubFolders();
-//     }
-//     return total;
-//   }
-//   public getNumFiles() {
-//     return this.files.length;
-//   }
-//   public getParent() {
-//     return this.parent;
-//   }
-
-//   addFile(file: any) {
-//     this.files.push(file);
-//   }
-
-//   removeFile(file: string) {
-//     this.files.splice(this.files.indexOf(file), 1);
-//   }
-
-//   addSubFolder(subFolder: Folder) {
-//     this.subFolders.push(subFolder);
-//   }
-//   removeSubFolderByName(name: string) {
-//     const subFolder = this.subFolders.find(d => d.name === name);
-//     if (subFolder) {
-//       this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
-//     }
-//   }
-//   removeSubFolder(subFolder: Folder) {
-//     this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
-//   }
-//   getPath(): string {
-//     if (this.parent === null || this.parent.name === '') {
-//       return this.name;
-//     } else {
-//       return `${this.parent.getPath()}/${this.name}`;
-//     }
-//   }
-// }

@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Text } from 'troika-three-text';
 
 import { Controller } from './Controller';
-import { EventType, Folder, Model } from './Model';
+import { EventType, TreeNode, Model } from './Model';
 import { GrowDirection, IMovingStrategy, MovingStrategy } from './MovingStrategy';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
@@ -27,18 +27,16 @@ export default class ViewImpl implements View {
 
   private readonly folderColor = 0xAA5555;
   private readonly fileColor = 0x5555AA;
-  private readonly fileBorderColor = 0x999999;
-  private readonly fileTextColor = 0x00ff00;
-  private readonly folderTextColor = 0x000000;
+  // private readonly fileBorderColor = 0x999999;
+  // private readonly fileTextColor = 0x00ff00;
+  // private readonly folderTextColor = 0x000000;
   private readonly lineColor = 0x999999;
 
-  private drawGrow: 'l' | 'r' | 'u' | 'd' = 'r';
-  private drawMode: 'h' | 'v' = 'h';
 
   private folderWidth = 1;
   private folderHeight = .3;
   private folderPanelDepth = 0.05;
-  private closedFolderTriangleSize: number = 0.1;
+  private closedNodeTriangleSize: number = 0.1;
   private fileWidth = 1;
   private fileHeight = .3;
   private filePanelDepth = 0.1;
@@ -51,7 +49,7 @@ export default class ViewImpl implements View {
   private interactionManager!: InteractionManager;
   private tween!: Tween<THREE.Vector3>;
   private controls: OrbitControls | undefined;
-  private folder!: Folder;
+  private root!: TreeNode;
   private controller!: Controller;
   private model!: Model;
   private astronaut!: THREE.Group<THREE.Object3DEventMap>;
@@ -73,12 +71,14 @@ export default class ViewImpl implements View {
       group: THREE.Group<THREE.Object3DEventMap>
     }
   } = {};
-  private pullRequests: {
-    [number: number]: {
-      graphicObject: THREE.Group<THREE.Object3DEventMap>,
-      folder: Folder,
-    }
-  } = {};
+
+  // private pullRequests: {
+  //   [number: number]: {
+  //     graphicObject: THREE.Group<THREE.Object3DEventMap>,
+  //     node: TreeNode,
+  //   }
+  // } = {};
+
   public setModel(model: Model) {
     this.model = model;
   }
@@ -133,7 +133,7 @@ export default class ViewImpl implements View {
       this.camera,
       this.renderer!.domElement
     );
-    this.model.onChange(EventType.FolderChange, () => this.onFolderChange());
+    this.model.onChange(EventType.TreeNodeChange, () => this.onTreeNodeChange());
     this.model.onChange(EventType.RepositoryChange, () => this.onRepositoryChange());
     this.model.onChange(EventType.CurrentCommitChange, () => this.onCurrentCommitChange());
     this.slider.addEventListener('input', () => {
@@ -197,18 +197,18 @@ export default class ViewImpl implements View {
     const datetime = this.model.getCurrentCommit().commit.author.date;
     this.dateInput.value = datetime.toLocaleString();
   }
-  private onFolderChange() {
+  private onTreeNodeChange() {
     this.repaintAll = true;
   }
   private doRepaintAll() {
     this.clearScene();
-    this.paintView(this.model.getFolder(), this.treeGroup);
+    this.paintView(this.model.getNode(), this.treeGroup);
     this.repaintAll = false;
   }
   private onRepositoryChange() {
     this.slider.max = (this.model.getCommitCount() - 1).toString();
     this.clearScene();
-    this.paintView(this.model.getFolder(), this.treeGroup);
+    this.paintView(this.model.getNode(), this.treeGroup);
   }
   private createSlider() {
     this.slider = document.getElementById('slider') as HTMLInputElement;
@@ -303,28 +303,28 @@ export default class ViewImpl implements View {
 
   public async start() {
     await this.clearScene();
-    this.paintView(this.folder, this.treeGroup);
+    this.paintView(this.root, this.treeGroup);
   }
-  public paintView(folder: Folder, group: THREE.Group) {
-    this.paintFolder(folder, group);
-    if (folder.open) {
-      this.paintFolderContent(folder, group);
-      this.paintSubFolders(folder, group);
+  public paintView(node: TreeNode, group: THREE.Group) {
+    this.paintFolder(node, group);
+    if (node.visible) {
+      this.paintFolderContent(node, group);
+      this.paintSubFolders(node, group);
     }
   }
-  public paintFolder(folder: Folder, group: THREE.Group) {
+  public paintFolder(node: TreeNode, group: THREE.Group) {
     const myGroup: THREE.Object3D = new THREE.Group();
     myGroup.userData.type = 'folder';
-    myGroup.userData.path = folder.getPath();
-    const folderBox = this.folderBox(folder.name ? folder.name : 'root');
+    myGroup.userData.path = node.getPath();
+    const folderBox = this.folderBox(node.name ? node.name : 'root');
     // if folder is closed, draw a diagonal line in the upper right corner
-    if (!folder.open) {
+    if (!node.visible) {
 
       // Crear una forma de triángulo
       const shape = new THREE.Shape();
       shape.moveTo(this.folderWidth / 2, this.folderHeight / 2);
-      shape.lineTo(this.folderWidth / 2, this.folderHeight / 2 - this.closedFolderTriangleSize);
-      shape.lineTo(this.folderWidth / 2 - this.closedFolderTriangleSize, this.folderHeight / 2);
+      shape.lineTo(this.folderWidth / 2, this.folderHeight / 2 - this.closedNodeTriangleSize);
+      shape.lineTo(this.folderWidth / 2 - this.closedNodeTriangleSize, this.folderHeight / 2);
       shape.lineTo(this.folderWidth / 2, this.folderHeight / 2);
 
       // Crear una geometría a partir de la forma
@@ -340,27 +340,27 @@ export default class ViewImpl implements View {
     }
     this.interactionManager.add(folderBox);
 
-    folderBox.addEventListener('click', (event) => {
-      console.log(folder.getPath());
+    folderBox.addEventListener('click', (event: any) => {
+      console.log(node.getPath());
       console.log(event.target.children[0].userData.elementName);
 
-      if (folder.open) {
-        folder.open = false;
+      if (node.visible) {
+        node.visible = false;
       } else {
-        folder.open = true;
+        node.visible = true;
       }
-      this.onFolderChange();
+      this.onTreeNodeChange();
       event.cancelBubble = true;
       event.stopPropagation();
     });
     myGroup.add(folderBox);
     group.add(myGroup);
   }
-  public paintFolderContent(folder: Folder, group: THREE.Group) {
+  public paintFolderContent(node: TreeNode, group: THREE.Group) {
     let index = 0;
     const filesGroup = new THREE.Group();
     this.moveFirstFileDistance(filesGroup.position);
-    for (const child of Object.values(folder.children)) {
+    for (const child of Object.values(node.children)) {
       if (child.isFile) {
         const fileGroup = new THREE.Group();
         this.moveFileDistance(fileGroup.position, index);
@@ -372,6 +372,7 @@ export default class ViewImpl implements View {
     group.add(filesGroup);
   }
 
+  
   public paintFile(name: string, group: THREE.Group, path: string) {
     const myGroup = new THREE.Group();
     myGroup.userData.elementName = path;
@@ -379,7 +380,7 @@ export default class ViewImpl implements View {
     myGroup.userData.path = path;
     const fileBox = this.fileBox(name);
     this.elements[path] = fileBox;
-    fileBox.addEventListener('click', (event) => {
+    fileBox.addEventListener('click', (event: any) => {
       console.log(path);
       event.cancelBubble = true;
     });
@@ -388,24 +389,24 @@ export default class ViewImpl implements View {
     group.add(myGroup);
   }
 
-  public paintSubFolders(folder: Folder, group: THREE.Group) {
+  public paintSubFolders(node: TreeNode, group: THREE.Group) {
     const subFoldersGroup = new THREE.Group();
     let lastNumOpenSubFolders = 1; //folder.open ? 1 : 0;
-    for (const subFolder of Object.values(folder.children)) {
-      if (!subFolder.isFile) {
+    for (const child of Object.values(node.children)) {
+      if (!child.isFile) {
         const currentSubFolderGroup = new THREE.Group();
         this.moveSiblingDistance(currentSubFolderGroup.position, lastNumOpenSubFolders);
         this.moveSonDistance(currentSubFolderGroup.position);
-        this.paintView(subFolder, currentSubFolderGroup);
-        this.connect(subFolder, subFoldersGroup, lastNumOpenSubFolders);
+        this.paintView(child, currentSubFolderGroup);
+        this.connect(subFoldersGroup, lastNumOpenSubFolders);
         subFoldersGroup.add(currentSubFolderGroup);
-        lastNumOpenSubFolders += subFolder.getNumOpenSubFolders();
+        lastNumOpenSubFolders += child.getNumVisibleNodes();
       }
     }
     group.add(subFoldersGroup);
   }
 
-  public connect(folder: Folder, group: THREE.Group, numSubFolders: number) {
+  public connect(group: THREE.Group, numSubFolders: number) {
     const lineGroup = new (THREE.Group);
     const points = [];
     let point0 = new THREE.Vector3(0, 0, 0);
@@ -477,12 +478,12 @@ export default class ViewImpl implements View {
     if (!this.programmers[programmer]) {
       this.createProgrammer(programmer);
     }
-    this.programmers[programmer].commitText.text = commit.commit.message;
+    this.programmers[programmer].commitText.textContent = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
       this.model.getCommitFiles(commit.sha).then(async (files: any) => {
         for (const file of files!) {
           if (file.status === 'added') {
-            await this.model.addFileOrFolder(commit.sha, file);
+            await this.model.addTreeNode(commit.sha, file);
           }
           const fileObject = this.elements[file.filename];
           if (fileObject) {
