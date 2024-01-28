@@ -319,14 +319,6 @@ export default class ViewImpl implements View {
     const folderBox = this.folderBox(folder.name ? folder.name : 'root');
     // if folder is closed, draw a diagonal line in the upper right corner
     if (!folder.open) {
-      // const points = [];
-      // points.push(new THREE.Vector3(this.folderWidth / 4, this.folderHeight / 2, 0.05));
-      // points.push(new THREE.Vector3(this.folderWidth / 2, 0, 0.05));
-      // const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-      // const lineMaterial = new THREE.LineBasicMaterial({ color: this.fileBorderColor });
-      // const line = new THREE.Line(lineGeometry, lineMaterial);
-      // myGroup.add(line);
-
 
       // Crear una forma de triángulo
       const shape = new THREE.Shape();
@@ -337,7 +329,6 @@ export default class ViewImpl implements View {
 
       // Crear una geometría a partir de la forma
       const geometry = new THREE.ShapeGeometry(shape);
-
 
       // Crear un material
       const material = new THREE.MeshBasicMaterial({ color: 0xff0000 }); // Rojo
@@ -369,19 +360,18 @@ export default class ViewImpl implements View {
     let index = 0;
     const filesGroup = new THREE.Group();
     this.moveFirstFileDistance(filesGroup.position);
-    for (const file of folder.files) {
-      const fileGroup = new THREE.Group();
-      let path = file;
-      if (folder.name !== '') {
-        path = folder.getPath() + "/" + file;
+    for (const child of Object.values(folder.children)) {
+      if (child.isFile) {
+        const fileGroup = new THREE.Group();
+        this.moveFileDistance(fileGroup.position, index);
+        this.paintFile(child.name, fileGroup, child.getPath());
+        filesGroup.add(fileGroup);
+        index++;
       }
-      this.moveFileDistance(fileGroup.position, index);
-      this.paintFile(file, fileGroup, path);
-      filesGroup.add(fileGroup);
-      index++;
     }
     group.add(filesGroup);
   }
+
   public paintFile(name: string, group: THREE.Group, path: string) {
     const myGroup = new THREE.Group();
     myGroup.userData.elementName = path;
@@ -397,17 +387,20 @@ export default class ViewImpl implements View {
     myGroup.add(fileBox);
     group.add(myGroup);
   }
+
   public paintSubFolders(folder: Folder, group: THREE.Group) {
     const subFoldersGroup = new THREE.Group();
     let lastNumOpenSubFolders = 1; //folder.open ? 1 : 0;
-    for (const subFolder of folder.subFolders) {
-      const currentSubFolderGroup = new THREE.Group();
-      this.moveSiblingDistance(currentSubFolderGroup.position, lastNumOpenSubFolders);
-      this.moveSonDistance(currentSubFolderGroup.position);
-      this.paintView(subFolder, currentSubFolderGroup);
-      this.connect(subFolder, subFoldersGroup, lastNumOpenSubFolders);
-      subFoldersGroup.add(currentSubFolderGroup);
-      lastNumOpenSubFolders += subFolder.getNumOpenSubFolders();
+    for (const subFolder of Object.values(folder.children)) {
+      if (!subFolder.isFile) {
+        const currentSubFolderGroup = new THREE.Group();
+        this.moveSiblingDistance(currentSubFolderGroup.position, lastNumOpenSubFolders);
+        this.moveSonDistance(currentSubFolderGroup.position);
+        this.paintView(subFolder, currentSubFolderGroup);
+        this.connect(subFolder, subFoldersGroup, lastNumOpenSubFolders);
+        subFoldersGroup.add(currentSubFolderGroup);
+        lastNumOpenSubFolders += subFolder.getNumOpenSubFolders();
+      }
     }
     group.add(subFoldersGroup);
   }

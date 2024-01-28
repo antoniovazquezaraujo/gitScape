@@ -186,43 +186,28 @@ export class ModelImpl implements Model {
 
     for (let i = 0; i < pathComponents.length - 1; i++) {
       const subFolderName = pathComponents[i];
-      let subFolder = currentFolder.subFolders.find(d => d.name === subFolderName);
+      let subFolder = currentFolder.children[subFolderName];
       if (!subFolder) {
-        subFolder = new Folder(subFolderName, currentFolder);
-        currentFolder.addSubFolder(subFolder);
+        subFolder = new Folder(subFolderName, false, currentFolder);
+        currentFolder.addTreeNode(subFolder);
       }
       currentFolder = subFolder;
     }
 
     const newNodeName = pathComponents[pathComponents.length - 1];
-    const newNode = new TreeNode(newNodeName, isFile, {});
-    if (isFile) {
-      if (!currentFolder.files.find(f => f === newNode.name)) {
-        currentFolder.addFile(newNode.name);
-      }
-    } else {
-      if (!currentFolder.subFolders.find(d => d.name === newNode.name)) {
-        const newSubFolder = this.createFolder(newNode, currentFolder);
-        currentFolder.addSubFolder(newSubFolder);
-      }
+    const newNode = new TreeNode(newNodeName, isFile, currentFolder, {});
+    if (!currentFolder.children[newNodeName]) {
+      currentFolder.addTreeNode(newNode);
+      this.notifyObservers(EventType.FolderChange);
     }
-    this.notifyObservers(EventType.FolderChange);
   }
   public removeElement(path: string): void {
     const parentPath = path.substring(0, path.lastIndexOf('/'));
     const elementName = path.substring(path.lastIndexOf('/') + 1);
     const folder = this.findFolderByPath(this.folder!, parentPath);
     if (folder) {
-      let index = folder.files.indexOf(elementName);
-      if (index !== -1) {
-        folder.removeFile(elementName);
-      } else {
-        for (let i = 0; i < folder.subFolders.length; i++) {
-          if (folder.subFolders[i].name === elementName) {
-            folder.removeSubFolder(folder.subFolders[i]);
-            break;
-          }
-        }
+      if (folder.children[elementName]) {
+        folder.removeTreeNode(folder.children[elementName]);
       }
     }
     this.notifyObservers(EventType.FolderChange);
@@ -288,100 +273,128 @@ export class ModelImpl implements Model {
   }
   // Crea una estructura de Folder a partir de un TreeNode de forma recursiva
   private createFolder(node: TreeNode, parent: Folder | null = null): Folder {
-    const folder = new Folder(node.name, parent);
+    // const folder = new Folder(node.name, parent);
 
-    for (let key in node.children) {
-      const childNode = node.children[key];
-      if (childNode.isFile) {
-        folder.addFile(childNode.name);
-      } else {
-        const subFolder = this.createFolder(childNode, folder);
-        folder.addSubFolder(subFolder);
-      }
-    }
-    return folder;
+    // for (let key in node.children) {
+    //   const childNode = node.children[key];
+    //   if (childNode.isFile) {
+    //     folder.addFile(childNode.name);
+    //   } else {
+    //     const subFolder = this.createFolder(childNode, folder);
+    //     folder.addSubFolder(subFolder);
+    //   }
+    // }
+    // return folder;
+    return node;
   }
 
   private findFolderByPath(root: Folder, path: string): Folder | null {
     const parts = path.split('/');
     let currentFolder = root;
+    let found = false;
     for (let part of parts) {
-      let found = false;
-      for (let subFolder of currentFolder.subFolders) {
-        if (subFolder.name === part) {
-          currentFolder = subFolder;
-          found = true;
-          break;
-        }
+      found = false;
+      if (currentFolder.children[part]) {
+        currentFolder = currentFolder.children[part];
+        found = true;
+        break;
       }
-      if (!found) {
-        return null;
-      }
+    }
+    if (!found) {
+      return null;
     }
     return currentFolder;
   }
 
 
   // Obtiene lof ficheros afectados por un commit
-  public async getCommitFiles(ref: string): Promise<any> {
-    try {
-      const commit = await this.octokit.repos.getCommit({
-        owner: this.owner,
-        repo: this.repo,
-        ref,
-      });
-      return commit.data.files;
-    } catch (error) {
-      console.error(error);
-    }
+  public async getCommitFiles(ref: string): Promise < any > {
+  try {
+    const commit = await this.octokit.repos.getCommit({
+      owner: this.owner,
+      repo: this.repo,
+      ref,
+    });
+    return commit.data.files;
+  } catch(error) {
+    console.error(error);
   }
+}
 
   // Obtiene los pull requests asociados a un commit
   public async getCommitPullRequests(commit_sha: string) {
-    try {
-      const commit = await this.octokit.repos.listPullRequestsAssociatedWithCommit({
-        owner: this.owner,
-        repo: this.repo,
-        commit_sha
-      });
-      return commit.data;
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  async getAllPullRequests() {
-    const options = this.octokit.pulls.list.endpoint.merge({
+  try {
+    const commit = await this.octokit.repos.listPullRequestsAssociatedWithCommit({
       owner: this.owner,
       repo: this.repo,
-      state: 'all',
-      per_page: 100, // maximum amount of results per page
+      commit_sha
     });
-    return await this.octokit.paginate(options);
+    return commit.data;
+  } catch (error) {
+    console.error(error);
   }
+}
+
+  async getAllPullRequests() {
+  const options = this.octokit.pulls.list.endpoint.merge({
+    owner: this.owner,
+    repo: this.repo,
+    state: 'all',
+    per_page: 100, // maximum amount of results per page
+  });
+  return await this.octokit.paginate(options);
+}
 
   public async getCommitsFromUrl(url: string) {
-    try {
-      const { data: commits } = await this.octokit.request('GET ' + url);
-      return commits;
-    } catch (error) {
-      console.error(error);
-    }
+  try {
+    const { data: commits } = await this.octokit.request('GET ' + url);
+    return commits;
+  } catch (error) {
+    console.error(error);
   }
+}
 
 
 }
 
+// export class TreeNode {
+//   name: string;
+//   children: { [key: string]: TreeNode; };
+//   isFile: boolean;
+
+//   constructor(name: string, isFile: boolean = false, children: { [key: string]: TreeNode; } = {}) {
+//     this.name = name;
+//     this.children = children;
+//     this.isFile = isFile;
+//   }
+//   find(path: string): TreeNode | null {
+//     const parts = path.split('/');
+//     let currentNode: TreeNode | null = this;
+//     for (const part of parts) {
+//       if (part in currentNode.children) {
+//         currentNode = currentNode.children[part];
+//       } else {
+//         return null;
+//       }
+//     }
+//     return currentNode;
+//   }
+// }
 export class TreeNode {
   name: string;
+  parent: TreeNode | null;
   children: { [key: string]: TreeNode; };
   isFile: boolean;
+  open: boolean;
 
-  constructor(name: string, isFile: boolean = false, children: { [key: string]: TreeNode; } = {}) {
+  constructor(name: string, isFile: boolean = false, parent: TreeNode | null = null, children: { [key: string]: TreeNode; } = {}) {
     this.name = name;
+    this.parent = parent;
     this.children = children;
     this.isFile = isFile;
+    this.open = !this.isFile; // Los archivos estarán cerrados por defecto
   }
+
   find(path: string): TreeNode | null {
     const parts = path.split('/');
     let currentNode: TreeNode | null = this;
@@ -394,66 +407,60 @@ export class TreeNode {
     }
     return currentNode;
   }
-}
-
-export class Folder {
-  name: string;
-  parent: Folder | null;
-  subFolders: Folder[];
-  files: string[];
-  open: boolean;
-
-  constructor(name: string, parent: Folder | null = null) {
-    this.name = name;
-    this.parent = parent;
-    this.subFolders = [];
-    this.files = [];
-    this.open = true;
+  findOpen(path: string): TreeNode | null {
+    const parts = path.split('/');
+    let currentNode: TreeNode | null = this;
+    for (const part of parts) {
+      let lastOpenNode = currentNode;
+      if (part in currentNode.children) {
+        if (currentNode.open) {
+          currentNode = currentNode.children[part];
+          lastOpenNode = currentNode;
+        } else {
+          return lastOpenNode;
+        }
+      } else {
+        return null;
+      }
+    }
+    return currentNode;
   }
-  public getNumOpenSubFolders(): number {
-    let total = 1;
-    if (this.open) {
-      for (let subFolder of this.subFolders) {
-        total += subFolder.getNumOpenSubFolders();
+
+  getNumOpenSubFolders(): number {
+    let total = this.open ? 1 : 0;
+    for (let child of Object.values(this.children)) {
+      if (!child.isFile) {
+        total += child.getNumOpenSubFolders();
       }
     }
     return total;
   }
 
-  public getNumSubFolders(): number {
+  getNumSubFolders(): number {
     let total = 1;
-    for (let subFolder of this.subFolders) {
-      total += subFolder.getNumSubFolders();
+    for (let child of Object.values(this.children)) {
+      if (!child.isFile) {
+        total += child.getNumSubFolders();
+      }
     }
     return total;
   }
-  public getNumFiles() {
-    return this.files.length;
+
+  getNumFiles(): number {
+    return Object.values(this.children).filter(child => child.isFile).length;
   }
   public getParent() {
     return this.parent;
   }
-
-  addFile(file: any) {
-    this.files.push(file);
+  addTreeNode(treeNode: TreeNode) {
+    this.children[treeNode.name] = treeNode;
+    treeNode.parent = this;
+  }
+  removeTreeNode(treeNode: TreeNode) {
+    treeNode.parent = null;
+    delete this.children[treeNode.name];
   }
 
-  removeFile(file: string) {
-    this.files.splice(this.files.indexOf(file), 1);
-  }
-
-  addSubFolder(subFolder: Folder) {
-    this.subFolders.push(subFolder);
-  }
-  removeSubFolderByName(name: string) {
-    const subFolder = this.subFolders.find(d => d.name === name);
-    if (subFolder) {
-      this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
-    }
-  }
-  removeSubFolder(subFolder: Folder) {
-    this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
-  }
   getPath(): string {
     if (this.parent === null || this.parent.name === '') {
       return this.name;
@@ -461,4 +468,78 @@ export class Folder {
       return `${this.parent.getPath()}/${this.name}`;
     }
   }
+  removeByName(name: string) {
+    const treeNode = this.children[name];
+    if (treeNode) {
+      this.removeTreeNode(treeNode);
+    }
+  }
 }
+export class Folder extends TreeNode {
+}
+// export class Folder {
+//   name: string;
+//   parent: Folder | null;
+//   subFolders: Folder[];
+//   files: string[];
+//   open: boolean;
+
+//   constructor(name: string, parent: Folder | null = null) {
+//     this.name = name;
+//     this.parent = parent;
+//     this.subFolders = [];
+//     this.files = [];
+//     this.open = true;
+//   }
+//   public getNumOpenSubFolders(): number {
+//     let total = 1;
+//     if (this.open) {
+//       for (let subFolder of this.subFolders) {
+//         total += subFolder.getNumOpenSubFolders();
+//       }
+//     }
+//     return total;
+//   }
+
+//   public getNumSubFolders(): number {
+//     let total = 1;
+//     for (let subFolder of this.subFolders) {
+//       total += subFolder.getNumSubFolders();
+//     }
+//     return total;
+//   }
+//   public getNumFiles() {
+//     return this.files.length;
+//   }
+//   public getParent() {
+//     return this.parent;
+//   }
+
+//   addFile(file: any) {
+//     this.files.push(file);
+//   }
+
+//   removeFile(file: string) {
+//     this.files.splice(this.files.indexOf(file), 1);
+//   }
+
+//   addSubFolder(subFolder: Folder) {
+//     this.subFolders.push(subFolder);
+//   }
+//   removeSubFolderByName(name: string) {
+//     const subFolder = this.subFolders.find(d => d.name === name);
+//     if (subFolder) {
+//       this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
+//     }
+//   }
+//   removeSubFolder(subFolder: Folder) {
+//     this.subFolders.splice(this.subFolders.indexOf(subFolder), 1);
+//   }
+//   getPath(): string {
+//     if (this.parent === null || this.parent.name === '') {
+//       return this.name;
+//     } else {
+//       return `${this.parent.getPath()}/${this.name}`;
+//     }
+//   }
+// }
