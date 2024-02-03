@@ -32,7 +32,7 @@ export class ControllerImpl implements Controller {
   commitIndexChanged(index: number): void {
     this.view.setStopped();
     this.model.setCommitIndex(index);
-    this.model.reloadFolder();
+    this.model.reload();
   }
   startSelected(): void {
     this.looping = true;
@@ -43,7 +43,7 @@ export class ControllerImpl implements Controller {
   }
   nextSelected(): void {
     let commitIndex = this.model.getCommitIndex();
-    if (this.looping && commitIndex < this.model.getCommitCount() ) {
+    if (this.looping && commitIndex < this.model.getCommitCount()) {
       this.model.setCommitIndex(++commitIndex);
     }
   }
