@@ -1,17 +1,14 @@
 // import { Octokit } from '@octokit/rest';
 import { GitModel, GitModelImpl } from './GitModel';
+import { EventType, TreeNode, TreeNodeImpl } from './TreeNodeModel';
 
-export enum EventType {
-  RepositoryChange = 'repositoryChange',
-  TreeNodeChange = 'treeNodeChange',
-  CurrentCommitChange = 'currentCommitChange'
-}
+
 export interface Model {
   initialize(): void;
   onChange(eventType: EventType, callback: () => void): void;
   notifyObservers(eventType: EventType): void;
   reload(): void;
-  getNode(): TreeNode;
+  getNode(): TreeNodeImpl;
   addElement(path: string, isFile: boolean): void;
   addTreeNode(commitSha: string, file: any): void;
   removeElement(path: string): void;
@@ -21,19 +18,27 @@ export interface Model {
   getCurrentCommit(): any;
   getPullRequestForCommit(commit_sha: string): any;
   getCommitFiles(ref: string): Promise<any>;
+  find(path: string): TreeNode | null;
+  findFirstVisibleParent(path: string): TreeNode;
 }
 
 
 export class ModelImpl implements Model {
   gitModel: GitModel;
+  treeNode: TreeNode;
 
-  private root: TreeNode | undefined;
-  private observers: { [key in EventType]?: (() => void)[] } = {};
+  observers: { [key in EventType]?: (() => void)[] } = {};
 
   constructor() {
     this.observers = {};
-    this.root = new TreeNode('');
+    this.treeNode = new TreeNodeImpl('');
     this.gitModel = new GitModelImpl();
+  }
+  find(path: string): TreeNode | null {
+    return this.treeNode.find(path);
+  }
+  findFirstVisibleParent(path: string): TreeNode {
+    return this.treeNode.findFirstVisibleParent(path);
   }
   onChange(eventType: EventType, callback: () => void): void {
     if (!this.observers[eventType]) {
@@ -57,15 +62,15 @@ export class ModelImpl implements Model {
     this.loadInitialEmptyTreeNode();
   }
   public loadInitialEmptyTreeNode() {
-    this.root = new TreeNode('');
+    this.treeNode = new TreeNodeImpl('');
     this.notifyObservers(EventType.TreeNodeChange);
   }
   public async reload() {
     if (this.gitModel.getCommitIndex() === 0) {
-      this.root = new TreeNode('');
+      this.treeNode = new TreeNodeImpl('');
     } else {
       const data = await this.gitModel.getTreeAtCommit(this.gitModel.getPreviousCommit().sha);
-      this.root = this.createTreeNodeFromCommit(data);
+      this.treeNode = this.createTreeNodeFromCommit(data);
     }
     this.notifyObservers(EventType.TreeNodeChange);
   }
@@ -89,8 +94,8 @@ export class ModelImpl implements Model {
     return null;
   }
 
-  public getNode(): TreeNode {
-    return this.root!;
+  public getNode(): TreeNodeImpl {
+    return this.treeNode!;
   }
   public async addTreeNode(commitSha: string, file: any): Promise<void> {
     const data = await this.gitModel.getTreeAtCommit(commitSha);
@@ -107,20 +112,20 @@ export class ModelImpl implements Model {
 
   public addElement(path: string, isFile: boolean): void {
     const pathComponents = path.split('/');
-    let currentRootNode = this.root!;
+    let currentRootNode = this.treeNode!;
 
     for (let i = 0; i < pathComponents.length - 1; i++) {
       const pathComponent = pathComponents[i];
       let treeNode = currentRootNode.children[pathComponent];
       if (!treeNode) {
-        treeNode = new TreeNode(pathComponent, false, currentRootNode);
+        treeNode = new TreeNodeImpl(pathComponent, false, currentRootNode);
         currentRootNode.addTreeNode(treeNode);
       }
       currentRootNode = treeNode;
     }
 
     const newNodeName = pathComponents[pathComponents.length - 1];
-    const newNode = new TreeNode(newNodeName, isFile, currentRootNode, {});
+    const newNode = new TreeNodeImpl(newNodeName, isFile, currentRootNode, {});
     if (!currentRootNode.children[newNodeName]) {
       currentRootNode.addTreeNode(newNode);
       this.notifyObservers(EventType.TreeNodeChange);
@@ -129,7 +134,7 @@ export class ModelImpl implements Model {
   public removeElement(path: string): void {
     const parentPath = path.substring(0, path.lastIndexOf('/'));
     const elementName = path.substring(path.lastIndexOf('/') + 1);
-    const node = this.findTreeNodeByPath(this.root!, parentPath);
+    const node = this.findTreeNodeByPath(this.treeNode!, parentPath);
     if (node) {
       if (node.children[elementName]) {
         node.removeTreeNode(node.children[elementName]);
@@ -139,13 +144,13 @@ export class ModelImpl implements Model {
   }
 
   private createTreeNodeFromCommit(data: any) {
-    const root = new TreeNode('');
+    const root = new TreeNodeImpl('');
     data.tree.forEach((item: any) => {
       let currentNode = root;
       const pathParts = item.path.split('/');
       pathParts.forEach((part: string, index: number) => {
         if (!currentNode.children[part]) {
-          currentNode.children[part] = new TreeNode(part);
+          currentNode.children[part] = new TreeNodeImpl(part);
           currentNode.children[part].parent = currentNode;
         }
         currentNode = currentNode.children[part];
@@ -157,7 +162,7 @@ export class ModelImpl implements Model {
     return root;
   }
 
-  findTreeNodeByPath(root: TreeNode, path: string): TreeNode | null {
+  findTreeNodeByPath(root: TreeNodeImpl, path: string): TreeNodeImpl | null {
     const parts = path.split('/');
     let currentRootNode = root;
     let found = false;
@@ -201,91 +206,4 @@ export class ModelImpl implements Model {
   }
 }
 
-
-export class TreeNode {
-  name: string;
-  parent: TreeNode | null;
-  children: { [key: string]: TreeNode; };
-  isFile: boolean;
-  visible: boolean;
-
-  constructor(name: string, isFile: boolean = false, parent: TreeNode | null = null, children: { [key: string]: TreeNode; } = {}) {
-    this.name = name;
-    this.parent = parent;
-    this.children = children;
-    this.isFile = isFile;
-    this.visible = !this.isFile; // Los archivos estarán cerrados por defecto
-  }
-
-  find(path: string): TreeNode | null {
-    const parts = path.split('/');
-    let currentNode: TreeNode | null = this;
-    for (const part of parts) {
-      if (part in currentNode.children) {
-        currentNode = currentNode.children[part];
-      } else {
-        return null;
-      }
-    }
-    return currentNode;
-  }
-  findOpen(path: string): TreeNode | null {
-    const parts = path.split('/');
-    let currentNode: TreeNode | null = this;
-    for (const part of parts) {
-      let lastOpenNode = currentNode;
-      if (part in currentNode.children) {
-        if (currentNode.visible) {
-          currentNode = currentNode.children[part];
-          lastOpenNode = currentNode;
-        } else {
-          return lastOpenNode;
-        }
-      } else {
-        return null;
-      }
-    }
-    return currentNode;
-  }
-
-  getNumVisibleNodes(): number {
-    if (!this.visible) {
-      return 1
-    };
-    let total = 1;
-    for (let child of Object.values(this.children)) {
-      if (!child.isFile) {
-        total += child.getNumVisibleNodes();
-      }
-    }
-    return total;
-  }
-
-
-  public getParent() {
-    return this.parent;
-  }
-  addTreeNode(treeNode: TreeNode) {
-    this.children[treeNode.name] = treeNode;
-    treeNode.parent = this;
-  }
-  removeTreeNode(treeNode: TreeNode) {
-    treeNode.parent = null;
-    delete this.children[treeNode.name];
-  }
-
-  getPath(): string {
-    if (this.parent === null || this.parent.name === '') {
-      return this.name;
-    } else {
-      return `${this.parent.getPath()}/${this.name}`;
-    }
-  }
-  removeByName(name: string) {
-    const treeNode = this.children[name];
-    if (treeNode) {
-      this.removeTreeNode(treeNode);
-    }
-  }
-}
 

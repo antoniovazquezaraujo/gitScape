@@ -5,9 +5,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { Text } from 'troika-three-text';
 
 import { Controller } from './Controller';
-import { EventType, TreeNode, Model } from './Model';
+import { EventType, TreeNode } from './TreeNodeModel';
 import { GrowDirection, IMovingStrategy, MovingStrategy } from './MovingStrategy';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
+import { Model } from './Model';
 
 
 
@@ -317,6 +318,7 @@ export default class ViewImpl implements View {
     myGroup.userData.type = 'folder';
     myGroup.userData.path = node.getPath();
     const folderBox = this.folderBox(node.name ? node.name : 'root');
+    this.elements[myGroup.userData.path] = folderBox;
     // if folder is closed, draw a diagonal line in the upper right corner
     if (!node.visible) {
 
@@ -361,10 +363,10 @@ export default class ViewImpl implements View {
     const filesGroup = new THREE.Group();
     this.moveFirstFileDistance(filesGroup.position);
     for (const child of Object.values(node.children)) {
-      if (child.isFile) {
+      if ((child as TreeNode).isFile) {
         const fileGroup = new THREE.Group();
         this.moveFileDistance(fileGroup.position, index);
-        this.paintFile(child.name, fileGroup, child.getPath());
+        this.paintFile((child as TreeNode).name, fileGroup, (child as TreeNode).getPath());
         filesGroup.add(fileGroup);
         index++;
       }
@@ -372,7 +374,7 @@ export default class ViewImpl implements View {
     group.add(filesGroup);
   }
 
-  
+
   public paintFile(name: string, group: THREE.Group, path: string) {
     const myGroup = new THREE.Group();
     myGroup.userData.elementName = path;
@@ -393,14 +395,14 @@ export default class ViewImpl implements View {
     const subFoldersGroup = new THREE.Group();
     let lastNumOpenSubFolders = 1; //folder.open ? 1 : 0;
     for (const child of Object.values(node.children)) {
-      if (!child.isFile) {
+      if (!(child as TreeNode).isFile) {
         const currentSubFolderGroup = new THREE.Group();
         this.moveSiblingDistance(currentSubFolderGroup.position, lastNumOpenSubFolders);
         this.moveSonDistance(currentSubFolderGroup.position);
-        this.paintView(child, currentSubFolderGroup);
+        this.paintView(child as TreeNode, currentSubFolderGroup);
         this.connect(subFoldersGroup, lastNumOpenSubFolders);
         subFoldersGroup.add(currentSubFolderGroup);
-        lastNumOpenSubFolders += child.getNumVisibleNodes();
+        lastNumOpenSubFolders += (child as TreeNode).getNumVisibleNodes();
       }
     }
     group.add(subFoldersGroup);
@@ -485,7 +487,14 @@ export default class ViewImpl implements View {
           if (file.status === 'added') {
             await this.model.addTreeNode(commit.sha, file);
           }
-          const fileObject = this.elements[file.filename];
+          let fileObject: THREE.Group;
+          let firstVisibleParent = this.model.findFirstVisibleParent(file.filename);
+          let parent = this.model.find(file.filename)?.parent;
+          if(parent && parent === firstVisibleParent){
+            fileObject = this.elements[file.filename];
+          }else{
+            fileObject = this.elements[firstVisibleParent!.getPath()];
+          }
           if (fileObject) {
             let position = new THREE.Vector3();
             fileObject.getWorldPosition(position);
