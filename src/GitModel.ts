@@ -1,4 +1,4 @@
-import { Octokit  } from 'octokit';
+import { Octokit } from 'octokit';
 export interface GitModel {
     initialize(): void;
     setCommitIndex(index: number): void;
@@ -84,7 +84,7 @@ export class GitModelImpl implements GitModel {
         });
 
         this.owner = 'antoniovazquezaraujo';
-        this.repo = 'letrain';
+        this.repo = 'gitScape-test';
     }
 
     public setCommitIndex(index: number) {

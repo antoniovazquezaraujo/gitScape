@@ -30,20 +30,22 @@ export class ControllerImpl implements Controller {
   }
 
   commitIndexChanged(index: number): void {
-    this.view.setStopped();
-    this.model.setCommitIndex(index);
-    this.model.reload();
+    if (index >= 0 && index < this.model.getCommitCount()) {
+      this.view.setStopped();
+      this.model.setCommitIndex(index);
+      this.model.reload();
+    }
   }
   startSelected(): void {
     this.looping = true;
     this.view.setStarted();
-    let commitIndex = 0;
-    this.model.setCommitIndex(commitIndex);
+    // let commitIndex = 0;
+    // this.model.setCommitIndex(commitIndex);
     this.nextSelected();
   }
   nextSelected(): void {
     let commitIndex = this.model.getCommitIndex();
-    if (this.looping && commitIndex < this.model.getCommitCount()) {
+    if (this.looping && commitIndex < this.model.getCommitCount()-1) {
       this.model.setCommitIndex(++commitIndex);
     }
   }

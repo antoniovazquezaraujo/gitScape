@@ -50,7 +50,6 @@ export default class ViewImpl implements View {
   private interactionManager!: InteractionManager;
   private tween!: Tween<THREE.Vector3>;
   private controls: OrbitControls | undefined;
-  private root!: TreeNode;
   private controller!: Controller;
   private model!: Model;
   private astronaut!: THREE.Group<THREE.Object3DEventMap>;
@@ -60,6 +59,8 @@ export default class ViewImpl implements View {
   private started: boolean = false;
   private slider!: HTMLInputElement;
   private dateInput!: HTMLInputElement;
+  private prevButton!: HTMLButtonElement;
+  private nextButton!: HTMLButtonElement;
   private visiblePullRequests: Set<string> = new Set<string>();
   private repaintAll: boolean = false;
   private programmers: {
@@ -103,8 +104,7 @@ export default class ViewImpl implements View {
     this.createTween();
     this.createRenderer();
     this.createOrbitControls();
-    this.createSlider();
-    this.createDateInput();
+    this.createControls();
     this.addEventListeners();
     this.animate();
     this.clearScene();
@@ -140,6 +140,18 @@ export default class ViewImpl implements View {
     this.slider.addEventListener('input', () => {
       const commitIndex = parseInt(this.slider.value, 10);
       this.onSliderChanged(commitIndex);
+    });
+    this.prevButton.addEventListener('click', () => {
+      if (parseInt(this.slider.value, 10) > 0) {
+        this.slider.value = (parseInt(this.slider.value, 10) - 1).toString();
+        this.onSliderChanged(parseInt(this.slider.value, 10));
+      }
+    });
+    this.nextButton.addEventListener('click', () => {
+      if(this.slider.value !== (this.model.getCommitCount() - 1).toString()){
+      this.slider.value = (parseInt(this.slider.value, 10) + 1).toString();
+      this.onSliderChanged(parseInt(this.slider.value, 10));
+      }
     });
     window.addEventListener('resize', () => this.onWindowResize(), false);
     document.addEventListener('keydown', async (event) => {
@@ -211,11 +223,12 @@ export default class ViewImpl implements View {
     this.clearScene();
     this.paintView(this.model.getNode(), this.treeGroup);
   }
-  private createSlider() {
+
+  createControls() {
     this.slider = document.getElementById('slider') as HTMLInputElement;
-  }
-  private createDateInput() {
     this.dateInput = (document.getElementById('datetime') as HTMLInputElement);
+    this.prevButton = document.getElementById('prev') as HTMLButtonElement;
+    this.nextButton = document.getElementById('next') as HTMLButtonElement;
   }
 
   private createScene() {
@@ -304,7 +317,7 @@ export default class ViewImpl implements View {
 
   public async start() {
     await this.clearScene();
-    this.paintView(this.root, this.treeGroup);
+    this.paintView(this.model.getNode(), this.treeGroup);
   }
   public paintView(node: TreeNode, group: THREE.Group) {
     this.paintFolder(node, group);
@@ -486,13 +499,14 @@ export default class ViewImpl implements View {
         for (const file of files!) {
           if (file.status === 'added') {
             await this.model.addTreeNode(commit.sha, file);
+            this.paintView(this.model.getNode(), this.treeGroup);
           }
           let fileObject: THREE.Group;
           let firstVisibleParent = this.model.findFirstVisibleParent(file.filename);
           let parent = this.model.find(file.filename)?.parent;
-          if(parent && parent === firstVisibleParent){
+          if (parent && parent === firstVisibleParent) {
             fileObject = this.elements[file.filename];
-          }else{
+          } else {
             fileObject = this.elements[firstVisibleParent!.getPath()];
           }
           if (fileObject) {
@@ -500,7 +514,7 @@ export default class ViewImpl implements View {
             fileObject.getWorldPosition(position);
             // we use parent to obtain the absolute position of the file, relative to his parent group
             await this.moveProgrammerTo(programmer, position);
-            // await this.makeFileGlow(fileObject);
+            this.makeFileGlow(fileObject);
           }
           if (file.status === 'removed') {
             this.model.removeElement(file.filename);

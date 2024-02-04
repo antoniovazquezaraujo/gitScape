@@ -66,13 +66,16 @@ export class ModelImpl implements Model {
     this.notifyObservers(EventType.TreeNodeChange);
   }
   public async reload() {
-    if (this.gitModel.getCommitIndex() === 0) {
-      this.treeNode = new TreeNodeImpl('');
-    } else {
-      const data = await this.gitModel.getTreeAtCommit(this.gitModel.getPreviousCommit().sha);
+    // if (this.gitModel.getCommitIndex() === 0) {
+    //   this.treeNode = new TreeNodeImpl('');
+    // } else {
+    const previousCommit = this.gitModel.getPreviousCommit();
+    if (previousCommit != null) {
+      const data = await this.gitModel.getTreeAtCommit(previousCommit.sha);
       this.treeNode = this.createTreeNodeFromCommit(data);
+      this.notifyObservers(EventType.TreeNodeChange);
     }
-    this.notifyObservers(EventType.TreeNodeChange);
+    // }
   }
 
   public setCommitIndex(index: number) {
