@@ -1,25 +1,27 @@
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+#container {
+  position: relative; /* Esto permite posicionar absolutamente los elementos hijos */
+  height: 5vh;
 }
 
 #controls {
-  display: flex;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 10px;
+  /* ... tus otros estilos ... */
 }
 
-#datetime {
-  flex: 0 0 auto;
+#content {
+  height: calc(3% )
 }
 
-#slider {
-  flex: 1 0 auto;
+#commitList {
+  /* ... tus otros estilos ... */
+  
+  z-index: 1; /* Esto hace que #commitList se pinte sobre #app */
+  width: 200px; /* Ajusta a tus necesidades */
+  height: 300%;
+  /* color de las letras: verde*/
+  color: green;
+  /* margen a la izquierda: 10px */
+  margin-left: 10px;
+  /* margen arriba: 10px */
+  margin-top: 40px;
 }
 
-#your-canvas-id {
-  flex: 1 0 auto;
-}
- 

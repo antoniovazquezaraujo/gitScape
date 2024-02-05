@@ -61,6 +61,8 @@ export default class ViewImpl implements View {
   private dateInput!: HTMLInputElement;
   private prevButton!: HTMLButtonElement;
   private nextButton!: HTMLButtonElement;
+  private toggleCommits!: HTMLButtonElement;
+  private commitList!: HTMLUListElement;
   private visiblePullRequests: Set<string> = new Set<string>();
   private repaintAll: boolean = false;
   private programmers: {
@@ -148,11 +150,22 @@ export default class ViewImpl implements View {
       }
     });
     this.nextButton.addEventListener('click', () => {
-      if(this.slider.value !== (this.model.getCommitCount() - 1).toString()){
-      this.slider.value = (parseInt(this.slider.value, 10) + 1).toString();
-      this.onSliderChanged(parseInt(this.slider.value, 10));
+      if (this.slider.value !== (this.model.getCommitCount() - 1).toString()) {
+        this.slider.value = (parseInt(this.slider.value, 10) + 1).toString();
+        this.onSliderChanged(parseInt(this.slider.value, 10));
       }
     });
+    this.toggleCommits.addEventListener('click', () => {
+      if (this.commitList.style.display === 'none') {
+        this.commitList.style.display = 'block';
+      } else {
+        this.commitList.style.display = 'none';
+      }
+
+    });
+
+
+
     window.addEventListener('resize', () => this.onWindowResize(), false);
     document.addEventListener('keydown', async (event) => {
       if (event.code === 'Space') {
@@ -217,11 +230,13 @@ export default class ViewImpl implements View {
     this.clearScene();
     this.paintView(this.model.getNode(), this.treeGroup);
     this.repaintAll = false;
+    this.paintCommits();
   }
   private onRepositoryChange() {
     this.slider.max = (this.model.getCommitCount() - 1).toString();
     this.clearScene();
     this.paintView(this.model.getNode(), this.treeGroup);
+
   }
 
   createControls() {
@@ -229,6 +244,8 @@ export default class ViewImpl implements View {
     this.dateInput = (document.getElementById('datetime') as HTMLInputElement);
     this.prevButton = document.getElementById('prev') as HTMLButtonElement;
     this.nextButton = document.getElementById('next') as HTMLButtonElement;
+    this.toggleCommits = document.getElementById('toggleCommits') as HTMLButtonElement;
+    this.commitList = document.getElementById('commitList') as HTMLUListElement;
   }
 
   private createScene() {
@@ -236,6 +253,18 @@ export default class ViewImpl implements View {
     this.treeGroup = new THREE.Group();
   }
 
+  async paintCommits() {
+    // Llena la lista de commits usando model.getAllCommits
+    const commitList = document.getElementById('commitList') as HTMLUListElement;
+    commitList.innerHTML = '';
+    const commits = this.model.getAllCommits();
+    for (const commit of await commits) {
+      const li = document.createElement('li');
+      li.textContent = commit.commit.message;
+      commitList.appendChild(li);
+    }
+
+  }
   private createRenderer() {
     const canvas = document.getElementById("app");
     if (canvas instanceof HTMLCanvasElement) {

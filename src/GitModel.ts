@@ -20,6 +20,7 @@ export interface GitModel {
     getCommitPullRequests(commit_sha: string): any;
     getAllPullRequests(): Promise<any>;
     getCommitsFromUrl(url: string): Promise<any>;
+    getAllCommits(): Promise<any>;
 }
 export class GitModelImpl implements GitModel {
     githubToken!: string;

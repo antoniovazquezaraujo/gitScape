@@ -20,6 +20,7 @@ export interface Model {
   getCommitFiles(ref: string): Promise<any>;
   find(path: string): TreeNode | null;
   findFirstVisibleParent(path: string): TreeNode;
+  getAllCommits(): Promise<any>;
 }
 
 
@@ -206,6 +207,9 @@ export class ModelImpl implements Model {
   }
   public getPullRequestForCommit(commit_sha: string): any {
     return this.gitModel.getPullRequestForCommit(commit_sha);
+  }
+  public async getAllCommits() {
+    return this.gitModel.getAllCommits();
   }
 }
 
