@@ -1,8 +1,11 @@
 import { Octokit } from 'octokit';
 
-// Si VITE_API_URL está definido, GitModel usa el backend Go (caché + token en servidor)
-// en lugar de llamar directamente a la API de GitHub desde el navegador.
-const API_URL: string | undefined = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') || undefined;
+// VITE_API_URL define el origen del backend Go (caché + token en el servidor).
+// - Sin definir: modo directo (Octokit llama a la API de GitHub desde el navegador).
+// - "/" o "": backend en el mismo origen (proxy de Vite en dev; el propio Go en producción).
+// - "http://host:puerto": backend en otro origen.
+const apiUrlRaw = import.meta.env.VITE_API_URL as string | undefined;
+const API_URL: string | undefined = apiUrlRaw === undefined ? undefined : apiUrlRaw.replace(/\/+$/, '');
 
 interface RepositoryState {
     commits: any[];
@@ -52,7 +55,7 @@ export class GitModelImpl implements GitModel {
 
     public async initialize() {
         this.createOctokit();
-        if (API_URL) {
+        if (API_URL !== undefined) {
             const state = await this.fetchRepositoryState();
             this.allCommits = state.commits;
             this.applyPullRequests(state.pullRequests, state.commitToPullRequest);
@@ -200,7 +203,7 @@ export class GitModelImpl implements GitModel {
     }
 
     public async getTreeAtCommit(ref: string): Promise<any> {
-        if (API_URL) {
+        if (API_URL !== undefined) {
             return this.fetchApi(`/tree/${ref}`);
         }
         const { data } = await this.octokit.rest.git.getTree({
@@ -215,7 +218,7 @@ export class GitModelImpl implements GitModel {
 
     // Obtiene lof ficheros afectados por un commit
     public async getCommitFiles(ref: string): Promise<any> {
-        if (API_URL) {
+        if (API_URL !== undefined) {
             try {
                 return await this.fetchApi(`/commits/${ref}/files`);
             } catch (error) {

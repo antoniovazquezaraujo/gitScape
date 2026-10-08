@@ -51,7 +51,7 @@ GITHUB_TOKEN=tu_token go run . -addr :8080
 Y en el `.env` del frontend:
 
 ```
-VITE_API_URL=/api   # en dev, Vite redirige /api al backend (ver vite.config.ts)
+VITE_API_URL=/   # mismo origen: en dev, Vite redirige /api al backend (ver vite.config.ts)
 ```
 
 | Modo | Cuándo usarlo | Cómo |
