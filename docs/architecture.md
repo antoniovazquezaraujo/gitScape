@@ -39,12 +39,22 @@ gitScape es una SPA sin backend: todo el trabajo ocurre en el navegador.
 
 1. `main.ts` instancia y cablea los tres componentes.
 2. `ControllerImpl.initialize()` → `GitModelImpl.initialize()`:
-   - descarga todos los commits de la rama (`VITE_GITHUB_BRANCH`),
-   - descarga los PRs y sus commits (mapeo commit → PR),
+   - **modo directo**: descarga todos los commits de la rama (`VITE_GITHUB_BRANCH`), luego los PRs y sus commits (mapeo commit → PR);
+   - **modo backend** (`VITE_API_URL`): pide el estado agregado a `GET /api/repos/{owner}/{repo}/state` (el backend hace ambas cosas en paralelo y con caché);
    - establece el primer commit como actual.
 3. `ViewImpl` pinta el árbol del commit actual.
-4. Slider o botones → `commitIndexChanged()` → recarga el árbol de ese commit.
+4. Slider o botones → `commitIndexChanged()` → recarga el árbol de ese commit (`GitModel.getTreeAtCommit`).
 5. `Espacio` → reproducción: por cada commit se lanza `animateCommit()` (vuelo del programador, resaltado de archivos, altas y bajas en el árbol) y al terminar se encadena el siguiente.
+
+## Backend Go (`server/`)
+
+Opcional pero recomendado. Ver [ADR 0006](adr/0006-backend-go.md). En modo backend el coste de API desde el navegador baja a **1 petición agregada + 1 por cambio de commit** (y los árboles/ficheros repetidos los sirve la caché del servidor).
+
+| Fase | Llamadas desde el navegador (modo backend) |
+|---|---|
+| Carga inicial | 1 (`/state`, cacheada) |
+| Cambio de commit | 1 (`/tree/{sha}`, inmutable) |
+| Reproducción | 1 por commit nuevo + ficheros cacheados |
 
 ## Coste de API (importante para repos grandes)
 
