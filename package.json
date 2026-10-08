@@ -1,8 +1,12 @@
 {
-  "name": "my-app",
+  "name": "gitscape",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Visualización 3D interactiva de la historia de un repositorio de GitHub",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
