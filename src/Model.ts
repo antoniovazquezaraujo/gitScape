@@ -59,8 +59,11 @@ export class ModelImpl implements Model {
   }
 
   public async initialize() {
-    this.gitModel.initialize();
+    await this.gitModel.initialize();
     this.loadInitialEmptyTreeNode();
+    // Avisa a la vista de que el repositorio ya está cargado
+    // (rango del slider y lista de commits).
+    this.notifyObservers(EventType.RepositoryChange);
   }
   public loadInitialEmptyTreeNode() {
     this.treeNode = new TreeNodeImpl('');
