@@ -1,0 +1,84 @@
+# gitScape 🛰️
+
+Visualización 3D interactiva de la historia de un repositorio de GitHub. Los commits, carpetas y archivos se convierten en un "paisaje" tridimensional que puedes orbitar, con reproducción animada de la historia: astronautas "programadores" vuelan hasta los archivos afectados por cada commit.
+
+## ✨ Características
+
+- **Árbol 3D del repositorio**: carpetas y archivos como paneles flotantes conectados, con etiquetas de texto en 3D.
+- **Línea temporal**: slider + lista de commits (fecha, autor, mensaje) para navegar por la historia.
+- **Reproducción animada**: pulsa `Espacio` y observa cómo el árbol crece commit a commit; cada "programador" (astronauta) trabaja sobre los archivos cambiados.
+- **Carpetas plegables**: clic en una carpeta para contraer/expandir su contenido.
+- **Detección de PRs**: identifica los pull requests asociados a cada commit.
+- **Presentación configurable**: las teclas `H`, `J`, `K`, `L` cambian la dirección de crecimiento del árbol.
+
+## 🧱 Stack
+
+- [Vite 5](https://vitejs.dev/) + TypeScript
+- [Three.js](https://threejs.org/) (+ `three.interactive`, `@tweenjs/tween.js`)
+- [troika-three-text](https://github.com/protectwise/troika/tree/main/packages/troika-three-text) para texto en 3D
+- [Octokit](https://github.com/octokit/octokit.js) para la API de GitHub
+
+## 🚀 Puesta en marcha
+
+Requisitos: **Node.js 18+** (probado con Node 22).
+
+```bash
+npm install
+cp .env.example .env   # edita y añade tu token
+npm run dev            # → http://localhost:5173/
+```
+
+### Configuración (`.env`)
+
+| Variable | Descripción | Por defecto |
+|---|---|---|
+| `VITE_GITHUB_TOKEN` | Token de GitHub. Opcional para repos públicos, recomendado para no agotar el límite anónimo (60 peticiones/hora) | — |
+| `VITE_GITHUB_OWNER` | Usuario u organización del repositorio | `antoniovazquezaraujo` |
+| `VITE_GITHUB_REPO` | Nombre del repositorio a visualizar | `gitScape` |
+| `VITE_GITHUB_BRANCH` | Rama cuya historia se visualiza | `develop` |
+
+> ⚠️ **Aviso de seguridad**: al ser una app 100 % cliente, cualquier variable `VITE_*` es visible en el navegador. Usa un token de solo lectura y nunca uno con permisos amplios. Ver [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md).
+
+## 🕹️ Controles
+
+| Acción | Control |
+|---|---|
+| Orbitar la cámara | Arrastrar con el ratón |
+| Navegar por la historia | Slider o botones `‹` `›` |
+| Reproducir/pausar la historia | `Espacio` |
+| Plegar/desplegar una carpeta | Clic sobre la carpeta |
+| Mostrar/ocultar la lista de commits | Botón `Toggle Commits` |
+| Cambiar la orientación del árbol | `H` `J` `K` `L` (y con `Shift`) |
+
+## 📁 Estructura del proyecto
+
+```
+src/
+├── main.ts            # Punto de entrada: cablea modelo, vista y controlador
+├── Model.ts           # Modelo: estado del repositorio y observadores
+├── GitModel.ts        # Cliente Octokit: commits, árboles, PRs
+├── TreeNodeModel.ts   # Nodos del árbol (visibilidad, rutas, jerarquía)
+├── View.ts            # Vista 3D: escena Three.js, animaciones, UI
+├── Controller.ts      # Controlador: reproducción y coordinación
+└── MovingStrategy.ts  # Estrategia de posicionamiento del layout 3D
+```
+
+## 🧪 Scripts
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Typecheck (`tsc`) + build de producción |
+| `npm run preview` | Sirve el build de producción |
+| `npm test` | Tests unitarios (Vitest) |
+
+## 🗺️ Roadmap
+
+- [ ] **Fuente de datos local**: leer del clon con un middleware de Vite para cargas instantáneas, sin token ni cuota (ver [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md)).
+- [ ] Optimizar la carga inicial (mapeo de PRs en paralelo, caché de árboles por commit).
+- [ ] Reducir el tamaño del chunk (code-splitting de Three.js).
+
+## 📚 Documentación
+
+- [Arquitectura](docs/architecture.md)
+- [Decisiones de arquitectura (ADRs)](docs/adr/)
