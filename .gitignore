@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 ideas.adoc
 .env
+
+# Go backend
+/server/gitscape
+/server/server

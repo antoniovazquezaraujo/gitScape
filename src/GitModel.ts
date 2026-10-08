@@ -1,4 +1,15 @@
 import { Octokit } from 'octokit';
+
+// Si VITE_API_URL está definido, GitModel usa el backend Go (caché + token en servidor)
+// en lugar de llamar directamente a la API de GitHub desde el navegador.
+const API_URL: string | undefined = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') || undefined;
+
+interface RepositoryState {
+    commits: any[];
+    pullRequests: any[];
+    commitToPullRequest: Record<string, number>;
+}
+
 export interface GitModel {
     initialize(): void;
     setCommitIndex(index: number): void;
@@ -41,8 +52,14 @@ export class GitModelImpl implements GitModel {
 
     public async initialize() {
         this.createOctokit();
-        await this.reloadAllRepositoryCommits();
-        await this.initializePullRequests();
+        if (API_URL) {
+            const state = await this.fetchRepositoryState();
+            this.allCommits = state.commits;
+            this.applyPullRequests(state.pullRequests, state.commitToPullRequest);
+        } else {
+            await this.reloadAllRepositoryCommits();
+            await this.initializePullRequests();
+        }
         this.setCommitIndex(0);
     }
     async initializePullRequests() {
@@ -77,6 +94,37 @@ export class GitModelImpl implements GitModel {
     }
     public getPullRequestForCommit(commitSha: string): any {
         return this.commitToPullRequest.get(commitSha);
+    }
+
+    private async fetchRepositoryState(): Promise<RepositoryState> {
+        const branch = import.meta.env.VITE_GITHUB_BRANCH ?? 'develop';
+        const res = await fetch(`${API_URL}/api/repos/${this.owner}/${this.repo}/state?branch=${encodeURIComponent(branch)}`);
+        if (!res.ok) {
+            throw new Error(`Backend ${res.status} al cargar el estado del repositorio`);
+        }
+        return res.json() as Promise<RepositoryState>;
+    }
+
+    private applyPullRequests(pullRequests: any[], commitToPullRequest: Record<string, number>): void {
+        this.allPullRequests = pullRequests;
+        const byNumber = new Map<number, any>();
+        for (const pr of pullRequests) {
+            byNumber.set(pr.number, pr);
+        }
+        for (const [sha, number] of Object.entries(commitToPullRequest)) {
+            const pr = byNumber.get(number);
+            if (pr) {
+                this.commitToPullRequest.set(sha, pr);
+            }
+        }
+    }
+
+    private async fetchApi<T>(path: string): Promise<T> {
+        const res = await fetch(`${API_URL}/api/repos/${this.owner}/${this.repo}${path}`);
+        if (!res.ok) {
+            throw new Error(`Backend ${res.status}: ${path}`);
+        }
+        return res.json() as Promise<T>;
     }
     public createOctokit(): void {
         this.githubToken = import.meta.env.VITE_GITHUB_TOKEN;
@@ -152,6 +200,9 @@ export class GitModelImpl implements GitModel {
     }
 
     public async getTreeAtCommit(ref: string): Promise<any> {
+        if (API_URL) {
+            return this.fetchApi(`/tree/${ref}`);
+        }
         const { data } = await this.octokit.rest.git.getTree({
             owner: this.owner,
             repo: this.repo,
@@ -164,6 +215,14 @@ export class GitModelImpl implements GitModel {
 
     // Obtiene lof ficheros afectados por un commit
     public async getCommitFiles(ref: string): Promise<any> {
+        if (API_URL) {
+            try {
+                return await this.fetchApi(`/commits/${ref}/files`);
+            } catch (error) {
+                console.error(error);
+                return undefined;
+            }
+        }
         try {
             const commit = await this.octokit.rest.repos.getCommit({
                 owner: this.owner,
