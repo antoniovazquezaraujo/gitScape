@@ -1,12 +1,19 @@
 import './style.css'
- 
-import  GitModel  from './GitModel';
-import  GitView  from './GitView';
-import { GitController } from './GitController';
- 
-const model = new GitModel();
-const view = new GitView("app", model);
-new GitController(model, view);
+import { ModelImpl } from './Model';
+import ViewImpl from './View';
+import { ControllerImpl } from './Controller';
+
+const controller = new ControllerImpl();
+const view = new ViewImpl();
+const model = new ModelImpl();
+
+view.setModel(model);
+view.setController(controller);
+controller.setModel(model);
+controller.setView(view);
+controller.initialize();
 
 
- 
+
+
+

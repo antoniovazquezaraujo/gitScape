@@ -2,11 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GitScape</title>
   </head>
   <body>
-    <canvas id="app"></canvas>
+    
+    <div id="container">
+      <div id="controls">
+        <input type="text" id="datetime" readonly>
+        <input type="range" id="slider" min="0" max="100" value="0">
+        <button id="prev">&lt;</button>
+        <button id="next">&gt;</button>
+        <button id="toggleCommits">Toggle Commits</button>
+    </div>
+      <div id="content">
+        <div id="commitList"></div>
+        <canvas id="app"></canvas>
+      </div>
+    </div>    
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
