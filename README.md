@@ -37,7 +37,29 @@ npm run dev            # → http://localhost:5173/
 | `VITE_GITHUB_REPO` | Nombre del repositorio a visualizar | `gitScape` |
 | `VITE_GITHUB_BRANCH` | Rama cuya historia se visualiza | `develop` |
 
-> ⚠️ **Aviso de seguridad**: al ser una app 100 % cliente, cualquier variable `VITE_*` es visible en el navegador. Usa un token de solo lectura y nunca uno con permisos amplios. Ver [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md).
+> ⚠️ **Aviso de seguridad**: al ser una app 100 % cliente, cualquier variable `VITE_*` es visible en el navegador. Usa un token de solo lectura y nunca uno con permisos amplios. La solución de fondo es el [backend Go](#-backend-go-opcional-recomendado): el token se queda en el servidor.
+
+## 🖥️ Backend Go (opcional, recomendado)
+
+La app puede funcionar sola (llamando a la API de GitHub desde el navegador) o con el backend local que agrupa, paraleliza y cachea los datos — recomendable para repositorios medianos/grandes y para no exponer el token.
+
+```bash
+cd server
+GITHUB_TOKEN=tu_token go run . -addr :8080
+```
+
+Y en el `.env` del frontend:
+
+```
+VITE_API_URL=/api   # en dev, Vite redirige /api al backend (ver vite.config.ts)
+```
+
+| Modo | Cuándo usarlo | Cómo |
+|---|---|---|
+| Directo | Repos pequeños, sin backend | Sin `VITE_API_URL` (Octokit en el navegador) |
+| **Backend Go** | Repos medianos/grandes, caché, token seguro | `go run .` + `VITE_API_URL=/api` |
+
+Medidas reales con un repo de 506 commits y 75 PRs: carga en frío ~16 s → **~6 s**; en caliente **~15 ms**. Detalles y fases en el [ADR 0006](docs/adr/0006-backend-go.md).
 
 ## 🕹️ Controles
 
@@ -56,11 +78,17 @@ npm run dev            # → http://localhost:5173/
 src/
 ├── main.ts            # Punto de entrada: cablea modelo, vista y controlador
 ├── Model.ts           # Modelo: estado del repositorio y observadores
-├── GitModel.ts        # Cliente Octokit: commits, árboles, PRs
+├── GitModel.ts        # Datos: Octokit directo o adaptador del backend Go
 ├── TreeNodeModel.ts   # Nodos del árbol (visibilidad, rutas, jerarquía)
 ├── View.ts            # Vista 3D: escena Three.js, animaciones, UI
 ├── Controller.ts      # Controlador: reproducción y coordinación
 └── MovingStrategy.ts  # Estrategia de posicionamiento del layout 3D
+
+server/                # Backend Go (opcional): proxy + caché + agregación
+├── main.go            # Configuración, servidor HTTP y middlewares
+├── github.go          # Cliente GitHub (paginación + concurrencia)
+├── handlers.go        # Endpoints de la API
+└── cache.go           # Caché en memoria con TTL
 ```
 
 ## 🧪 Scripts
@@ -70,12 +98,14 @@ src/
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | Typecheck (`tsc`) + build de producción |
 | `npm run preview` | Sirve el build de producción |
-| `npm test` | Tests unitarios (Vitest) |
+| `npm test` | Tests unitarios del frontend (Vitest) |
+| `cd server && go test ./...` | Tests del backend Go |
 
 ## 🗺️ Roadmap
 
-- [ ] **Fuente de datos local**: leer del clon con un middleware de Vite para cargas instantáneas, sin token ni cuota (ver [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md)).
-- [ ] Optimizar la carga inicial (mapeo de PRs en paralelo, caché de árboles por commit).
+- [x] **Backend Go (fase 0)**: proxy + caché + agregación; token fuera del navegador (ver [`docs/adr/0006`](docs/adr/0006-backend-go.md)).
+- [ ] Backend fase 1: caché en disco y prefetch de la reproducción.
+- [ ] Backend fase 2: modo local (`--repo-path`) leyendo del clon con git (cubre [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md)).
 - [ ] Reducir el tamaño del chunk (code-splitting de Three.js).
 
 ## 📚 Documentación
