@@ -51,7 +51,6 @@ export class TreeNodeImpl implements TreeNode {
     findFirstVisibleParent(path: string): TreeNode {
         const parts = path.split('/');
         let currentNode: TreeNode = this;
-        let lastOpenNode = currentNode;
         for (const part of parts) {
             let child = currentNode.children[part];
             if (child != null) {
@@ -61,7 +60,6 @@ export class TreeNodeImpl implements TreeNode {
                     return child;
                 }
             }
-            lastOpenNode = currentNode;
         }
         return currentNode;
     }
