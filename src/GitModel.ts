@@ -84,8 +84,8 @@ export class GitModelImpl implements GitModel {
             auth: this.githubToken,
         });
 
-        this.owner = 'antoniovazquezaraujo';
-        this.repo = 'gitScape-test';
+        this.owner = import.meta.env.VITE_GITHUB_OWNER ?? 'antoniovazquezaraujo';
+        this.repo = import.meta.env.VITE_GITHUB_REPO ?? 'gitScape';
     }
 
     public setCommitIndex(index: number) {
@@ -125,7 +125,7 @@ export class GitModelImpl implements GitModel {
         return null;
     }
     public async reloadAllRepositoryCommits(): Promise<void> {
-        const perPage = 10; // Máximo permitido por la API de GitHub
+        const perPage = 100; // La API de GitHub permite hasta 100 elementos por página
         let page = 0;
         this.allCommits = [];
 
@@ -135,7 +135,7 @@ export class GitModelImpl implements GitModel {
                 repo: this.repo,
                 per_page: perPage,
                 page: page,
-                sha: 'develop'
+                sha: import.meta.env.VITE_GITHUB_BRANCH ?? 'develop'
             });
 
             this.allCommits = this.allCommits.concat(commits);
