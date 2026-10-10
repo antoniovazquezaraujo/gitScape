@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gitScape · Maqueta «plano doble» (PRs + ficheros)</title>
+<style>
+  :root{
+    --bg:#070b16; --ink:#e2e8f0; --muted:#94a3b8; --line:#22d3ee;
+    --file:#3b82f6; --folder:#f59e0b; --pr:#a78bfa; --lit:#34d399;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:radial-gradient(1200px 640px at 18% -12%, #17223d 0%, var(--bg) 58%) fixed, var(--bg);
+    color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  header{padding:24px 30px 4px;max-width:1520px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 8px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0;max-width:1080px}
+  .sub b{color:#dbeafe;font-weight:600}
+  .accent{color:#7dd3fc}
+  nav{
+    display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    padding:16px 30px 0;max-width:1520px;margin:0 auto;
+  }
+  .tab{
+    font:600 13px/1 inherit;color:#cbd5e1;background:rgba(15,23,42,.6);
+    border:1px solid rgba(148,163,184,.25);border-radius:999px;padding:9px 15px;
+    cursor:pointer;transition:all .2s;
+  }
+  .tab:hover{border-color:rgba(125,211,252,.5);color:#e0f2fe}
+  .tab.active{background:rgba(34,211,238,.12);border-color:#22d3ee;color:#a5f3fc}
+  .legend{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;align-items:center}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px}
+  .legend i.dash{background:transparent;border:1.5px dashed #8b5cf6}
+  .legend i.dot{width:10px;height:10px;border-radius:50%}
+  main{max-width:1520px;margin:0 auto;padding:14px 30px 46px}
+  .variant{display:none}
+  .variant.active{display:block}
+  .vhead h2{font-size:16.5px;margin:12px 0 3px}
+  .vhead p{color:var(--muted);font-size:13px;line-height:1.55;margin:2px 0 14px;max-width:1080px}
+  .canvas{
+    border:1px solid rgba(148,163,184,.16);border-radius:18px;padding:8px;
+    background:linear-gradient(180deg,rgba(15,23,42,.5),rgba(2,6,23,.35));
+    box-shadow:0 18px 50px -30px rgba(0,0,0,.9);
+  }
+  svg.scene{width:100%;height:auto;display:block}
+  .hint{font-size:12.5px;color:#7dd3fc;min-height:17px;margin:9px 2px 0}
+  .meta{display:grid;grid-template-columns:1.05fr 1.05fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:980px){.meta{grid-template-columns:1fr}}
+  .card{
+    background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.16);
+    border-radius:14px;padding:13px 16px;
+  }
+  .card h3{font-size:12.5px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.9px;color:#cbd5e1}
+  .card ul{margin:4px 0 0;padding-left:17px;font-size:12.7px;line-height:1.6;color:#c7d2e3}
+  .pros li::marker{color:var(--lit)}
+  .cons li::marker{color:#f87171}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 9px}
+  .chip{font-size:11.3px;padding:3px 9px;border-radius:999px;border:1px solid;background:rgba(255,255,255,.03);white-space:nowrap}
+  .chip.good{border-color:rgba(52,211,153,.55);color:#6ee7b7}
+  .chip.warn{border-color:rgba(251,191,36,.55);color:#fcd34d}
+  .chip.bad{border-color:rgba(248,113,113,.55);color:#fca5a5}
+  .note{font-size:12.6px;line-height:1.6;color:#aab8cc;margin:6px 0 0}
+  footer{max-width:1520px;margin:0 auto;padding:0 30px 30px;color:#64748b;font-size:12px}
+
+  /* ---- SVG ---- */
+  .panel{fill:rgba(15,23,42,.55);stroke:rgba(148,163,184,.22);stroke-width:1}
+  .panel.front{fill:rgba(30,41,59,.38)}
+  .tag-bg{fill:#0b1224;stroke:rgba(148,163,184,.4);stroke-width:1}
+  .tag-tx{fill:#cbd5e1;font:600 10.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.7px}
+  .rail{stroke:rgba(148,163,184,.32);stroke-width:1.2;fill:none}
+  .shaft{stroke:rgba(148,163,184,.25);stroke-width:1.2;stroke-dasharray:4 8;fill:none}
+
+  .folder-bg{fill:#33240e;stroke:#f59e0b;stroke-width:1}
+  .folder-ico{fill:#f59e0b}
+  .folder-tx{fill:#fcd34d;font:600 10.5px ui-monospace,Menlo,Consolas,monospace}
+
+  .file{cursor:pointer;transition:opacity .25s}
+  .file-bg{fill:#101b33;stroke:#3b82f6;stroke-width:1;transition:all .25s}
+  .file-ico{fill:none;stroke:#3b82f6;stroke-width:1.1;stroke-linejoin:round}
+  .file-tx{fill:#dbeafe;font:10px ui-monospace,Menlo,Consolas,monospace}
+  .file:hover .file-bg{stroke:#93c5fd}
+  .file.lit .file-bg{fill:#0b2b26;stroke:#34d399;stroke-width:1.7;filter:url(#glow)}
+  .file.lit .file-ico{stroke:#34d399}
+  .file.lit .file-tx{fill:#a7f3d0}
+  .file.dim{opacity:.26}
+
+  .pr-card{cursor:pointer;transition:opacity .25s}
+  .pr-bg{fill:#221a3a;stroke:#a78bfa;stroke-width:1;transition:all .25s}
+  .pr-card.issue .pr-bg{stroke:#8b5cf6;stroke-dasharray:5 4}
+  .pr-card:hover .pr-bg{stroke:#ddd6fe}
+  .pr-card.selected .pr-bg{stroke:#e9d5ff;stroke-width:1.8;filter:url(#glow)}
+  .pr-card.dim{opacity:.38}
+  .pr-num{fill:#a78bfa;font:700 12px ui-monospace,Menlo,Consolas,monospace}
+  .pr-title{fill:#ede9fe;font:600 11.5px system-ui,sans-serif}
+  .pr-title.small{font-size:9.6px}
+  .pr-sub{fill:#a5b4fc;font:10.2px ui-monospace,Menlo,Consolas,monospace}
+
+  .conn{fill:none;stroke:#22d3ee;stroke-width:1.6;opacity:.9}
+  .conn.faint{stroke:#64748b;stroke-width:1;opacity:.5}
+  .conn.live{stroke-dasharray:7 7;animation:ants 1s linear infinite;filter:url(#glow)}
+  .conn-dot{fill:#22d3ee}
+  @keyframes ants{to{stroke-dashoffset:-28}}
+
+  .astro{transition:transform .8s cubic-bezier(.45,.05,.55,.95)}
+  .astro-bob{animation:bob 2.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+</style>
+</head>
+<body>
+
+<!-- Defs globales: filtro de glow y rejilla de planos (compartidos por las 3 escenas) -->
+<svg width="0" height="0" style="position:absolute;left:-9999px" aria-hidden="true">
+  <defs>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+      <path d="M26 0H0V26" fill="none" stroke="rgba(148,163,184,.07)" stroke-width="1"/>
+    </pattern>
+  </defs>
+</svg>
+
+<header>
+  <h1>gitScape · Maqueta del «plano doble»</h1>
+  <p class="sub">
+    Tres formas de poner las <b>PRs</b> (y alguna issue) junto al <b>árbol de ficheros</b> mientras los astronautas trabajan.
+    Datos ficticios del proyecto <b>LeTrain</b>. Esta maqueta existe para <b>decidir</b>, no para lucirla:
+    <span class="accent">clic en una PR</span> para resaltar sus ficheros y ver las conexiones; <span class="accent">clic en un fichero</span> para localizar una PR que lo toca.
+  </p>
+</header>
+
+<nav>
+  <button class="tab active" data-v="v1">1 · Profundidad (Z)</button>
+  <button class="tab" data-v="v2">2 · Apilado vertical (Y)</button>
+  <button class="tab" data-v="v3">3 · Híbrido barato</button>
+  <div class="legend">
+    <span><i style="background:#3b82f6"></i>fichero</span>
+    <span><i style="background:#f59e0b"></i>carpeta</span>
+    <span><i style="background:#a78bfa"></i>PR</span>
+    <span><i class="dash"></i>issue</span>
+    <span><i style="background:#22d3ee"></i>conexión</span>
+    <span><i style="background:#34d399"></i>tocado</span>
+    <span><i class="dot" style="background:#e2e8f0"></i>astronauta</span>
+  </div>
+</nav>
+
+<main>
+
+  <!-- ================= VARIANTE 1 ================= -->
+  <section class="variant active" id="v1">
+    <div class="vhead">
+      <h2>Variante 1 · Dos planos en profundidad (Z)</h2>
+      <p>El árbol de ficheros vive en el plano trasero y las PRs flotan en un plano delantero translúcido. Las líneas de conexión atraviesan el hueco y el astronauta viaja de un plano al otro.</p>
+    </div>
+    <div class="canvas"><svg class="scene" id="svg1" viewBox="0 0 1100 710" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <p class="hint" id="hint-v1">Selecciona una PR (o un fichero) para ver sus conexiones…</p>
+    <div class="meta">
+      <div class="card"><h3>A favor</h3><ul class="pros">
+        <li>Separa código (atrás) y colaboración (delante) sin mezclarlos.</li>
+        <li>Las líneas que cruzan el hueco explican la relación PR→fichero de un vistazo.</li>
+        <li>Escala a más capas: issues, releases, revisiones…</li>
+        <li>Es la más espectacular: refuerza la identidad 3D del proyecto.</li>
+      </ul></div>
+      <div class="card"><h3>En contra</h3><ul class="cons">
+        <li>Oclusión: un plano tapa al otro según la cámara; exige transparencias y orden de dibujo.</li>
+        <li>Seleccionar tarjetas en perspectiva es más lento e impreciso.</li>
+        <li>Coste alto: cámara, dos layouts y gestión de amontonamiento.</li>
+        <li>Con muchas PRs, el plano delantero se satura igual que un panel 2D.</li>
+      </ul></div>
+      <div class="card"><h3>Valoración</h3>
+        <div class="chips">
+          <span class="chip warn">Legibilidad: media</span>
+          <span class="chip good">Riqueza visual: muy alta</span>
+          <span class="chip bad">Coste: L</span>
+          <span class="chip warn">Riesgo de confusión: medio-alto</span>
+        </div>
+        <p class="note">Para invertir solo si se busca el efecto «wow» y hay plan para resolver la oclusión (transparencias, cámara guiada, plegado de planos).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VARIANTE 2 ================= -->
+  <section class="variant" id="v2">
+    <div class="vhead">
+      <h2>Variante 2 · Apilado vertical (Y)</h2>
+      <p>Los ficheros se quedan en la «planta baja» y las PRs suben a una «segunda planta». Las conexiones caen en vertical por el hueco y el astronauta sube y baja como un montacargas.</p>
+    </div>
+    <div class="canvas"><svg class="scene" id="svg2" viewBox="0 0 1280 900" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <p class="hint" id="hint-v2">Selecciona una PR (o un fichero) para ver sus conexiones…</p>
+    <div class="meta">
+      <div class="card"><h3>A favor</h3><ul class="pros">
+        <li>Las dos capas se ven siempre: sin oclusión ni peleas de transparencia.</li>
+        <li>Conexiones verticales cortas: se sigue cada PR sin cruzar el árbol.</li>
+        <li>Metáfora instantánea («planta baja / segunda planta»).</li>
+        <li>Implementación directa: dos bandas, cables y reutilizar el layout de ficheros.</li>
+      </ul></div>
+      <div class="card"><h3>En contra</h3><ul class="cons">
+        <li>Pide pantalla alta/panorámica; en ventanas bajas habrá scroll o zoom.</li>
+        <li>Menos impacto visual que la profundidad.</li>
+        <li>El árbol queda comprimido en una banda, con menos aire entre nodos.</li>
+        <li>Muchas PRs saturan la planta superior (necesitará plegar/filtrar).</li>
+      </ul></div>
+      <div class="card"><h3>Valoración</h3>
+        <div class="chips">
+          <span class="chip good">Legibilidad: alta</span>
+          <span class="chip warn">Riqueza visual: media</span>
+          <span class="chip warn">Coste: M</span>
+          <span class="chip good">Riesgo de confusión: bajo</span>
+        </div>
+        <p class="note">La candidata equilibrada: se entiende hoy y es asumible mañana. Sacrifica espectáculo por claridad.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VARIANTE 3 ================= -->
+  <section class="variant" id="v3">
+    <div class="vhead">
+      <h2>Variante 3 · Híbrido barato (un solo plano)</h2>
+      <p>Sin segundo plano: cada PR es una tarjeta anclada cerca de los ficheros que toca, conectada por líneas finas. Todas las conexiones están siempre a la vista; el experimento sirve para comparar coste/beneficio.</p>
+    </div>
+    <div class="canvas"><svg class="scene" id="svg3" viewBox="0 0 1200 740" preserveAspectRatio="xMidYMid meet"></svg></div>
+    <p class="hint" id="hint-v3">Selecciona una PR (o un fichero) para ver sus conexiones…</p>
+    <div class="meta">
+      <div class="card"><h3>A favor</h3><ul class="pros">
+        <li>Coste mínimo: reutiliza el layout actual, sin cámara ni planos nuevos.</li>
+        <li>Se puede lanzar ya para validar con PRs reales si se entiende.</li>
+        <li>Las PRs quedan contextualizadas junto al código que tocan.</li>
+      </ul></div>
+      <div class="card"><h3>En contra</h3><ul class="cons">
+        <li>Las tarjetas compiten con el árbol: tapan ficheros y etiquetas.</li>
+        <li>Las líneas se cruzan con el árbol y entre sí; el ruido crece rápido.</li>
+        <li>No escala: con muchas PRs es un amasijo difícil de leer.</li>
+        <li>La asociación PR→fichero se pierde al alejar la cámara.</li>
+      </ul></div>
+      <div class="card"><h3>Valoración</h3>
+        <div class="chips">
+          <span class="chip warn">Legibilidad: media-baja</span>
+          <span class="chip warn">Riqueza visual: media</span>
+          <span class="chip good">Coste: S</span>
+          <span class="chip bad">Riesgo al escalar: alto</span>
+        </div>
+        <p class="note">Experimento barato para validar datos e interacción antes de invertir en un plano nuevo. No como solución final.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>Maqueta conceptual · sin build, sin dependencias, sin red · datos ficticios de LeTrain · gitScape</footer>
+
+<script>
+(function(){
+  'use strict';
+
+  // ======================= DATOS FICTICIOS (LeTrain) =======================
+  const FILES = {
+    'CommandManager.java':    'core/src/main/java/letrain/CommandManager.java',
+    'TrackGeometry.java':     'core/src/main/java/letrain/TrackGeometry.java',
+    'RailBuilder.java':       'core/src/main/java/letrain/RailBuilder.java',
+    'TrackSwitch.java':       'core/src/main/java/letrain/TrackSwitch.java',
+    'Silbato.java':           'core/src/main/java/letrain/audio/Silbato.java',
+    'HudRenderer.java':       'core/src/main/java/letrain/hud/HudRenderer.java',
+    'Theme.java':             'core/src/main/java/letrain/hud/Theme.java',
+    'LeTrainLexer.g4':        'core/src/main/java/letrain/grammar/LeTrainLexer.g4',
+    'LeTrainParser.g4':       'core/src/main/java/letrain/grammar/LeTrainParser.g4',
+    'ScheduleValidator.java': 'core/src/main/java/letrain/schedule/ScheduleValidator.java',
+    'SmokeTest.java':         'core/src/test/java/letrain/SmokeTest.java'
+  };
+
+  const PRS = [
+    {id:'#42', kind:'pr',    title:'Silbato de la locomotora', state:'abierta',  files:['Silbato.java','CommandManager.java','LeTrainLexer.g4']},
+    {id:'#55', kind:'pr',    title:'HUD nocturno del panel',   state:'mergeada', files:['HudRenderer.java','Theme.java']},
+    {id:'#37', kind:'pr',    title:'Agujas a prueba de niebla',state:'mergeada', files:['TrackSwitch.java','TrackGeometry.java','CommandManager.java']},
+    {id:'#51', kind:'pr',    title:'Gramática ANTLR de horarios',state:'abierta',files:['LeTrainLexer.g4','LeTrainParser.g4','ScheduleValidator.java']},
+    {id:'#33', kind:'issue', title:'Freno de emergencia falla',state:'issue',    files:['TrackSwitch.java','RailBuilder.java']},
+    {id:'#48', kind:'pr',    title:'Vías curvas en el trazado',state:'abierta', files:['TrackGeometry.java','RailBuilder.java','SmokeTest.java']}
+  ];
+
+  // ======================= HELPERS SVG =======================
+  const NS = 'http://www.w3.org/2000/svg';
+  function E(tag, attrs, parent){
+    const n = document.createElementNS(NS, tag);
+    if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function txt(parent, x, y, s, cls, extra){
+    const t = E('text', Object.assign({x:x, y:y, 'class':cls||''}, extra||{}), parent);
+    t.textContent = s;
+    return t;
+  }
+  function panel(svg, x, y, w, h, front){
+    E('rect', {x:x, y:y, width:w, height:h, rx:16, 'class':'panel'+(front?' front':'')}, svg);
+    E('rect', {x:x+2, y:y+2, width:w-4, height:h-4, rx:14, fill:'url(#grid)', opacity:.55}, svg);
+  }
+  function tagPill(svg, x, y, label){
+    const w = label.length*7.2 + 18;
+    E('rect', {x:x, y:y, width:w, height:22, rx:11, 'class':'tag-bg'}, svg);
+    txt(svg, x+9, y+15, label, 'tag-tx');
+  }
+  function folderChip(parent, x, y, w, label){
+    E('rect', {x:x, y:y, width:w, height:24, rx:7, 'class':'folder-bg'}, parent);
+    E('path', {d:'M0 2 h5 l2 2 h7 v8 h-14 z', 'class':'folder-ico', transform:'translate('+(x+9)+','+(y+7)+')'}, parent);
+    txt(parent, x+26, y+16, label, 'folder-tx');
+  }
+  function fileCard(parent, id, x, y, w, h, refs){
+    const g = E('g', {'class':'file'}, parent);
+    E('title', {}, g).textContent = FILES[id] || id;
+    E('rect', {x:x, y:y, width:w, height:h, rx:8, 'class':'file-bg'}, g);
+    E('path', {d:'M0 1 h6 l3 3 v9 h-9 z M6 1 v3 h3', 'class':'file-ico', transform:'translate('+(x+9)+','+(y+h/2-6.5)+')'}, g);
+    txt(g, x+26, y+h/2+3.5, id, 'file-tx');
+    g.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      const pr = PRS.find(function(p){ return p.files.indexOf(id) !== -1; });
+      if (pr && pr.id !== selected) selectPr(pr.id);
+    });
+    refs.files[id] = g;
+  }
+  function prCard(parent, pr, x, y, w, h, refs, compact){
+    const g = E('g', {'class':'pr-card'+(pr.kind==='issue'?' issue':'')}, parent);
+    E('title', {}, g).textContent = pr.id + ' · ' + pr.title + ' · ' + pr.files.length + ' ficheros';
+    E('rect', {x:x, y:y, width:w, height:h, rx:10, 'class':'pr-bg'}, g);
+    txt(g, x+11, y+0.36*h, pr.id, 'pr-num');
+    txt(g, x+w-11, y+0.36*h, pr.state, 'pr-sub', {'text-anchor':'end'});
+    txt(g, x+11, y+0.68*h, pr.title, 'pr-title'+(compact?' small':''));
+    if (!compact) txt(g, x+11, y+h-9, pr.files.length + ' ficheros', 'pr-sub');
+    g.addEventListener('click', function(ev){ ev.stopPropagation(); selectPr(pr.id); });
+    refs.prs[pr.id] = g;
+  }
+  function conn(parent, a, b, cls, shape){
+    let d;
+    if (shape === 'cable'){
+      d = 'M '+a.x+' '+a.y+' C '+a.x+' '+(a.y+110)+', '+b.x+' '+(b.y-130)+', '+b.x+' '+b.y;
+    } else if (shape === 'curve'){
+      d = 'M '+a.x+' '+a.y+' Q '+((a.x+b.x)/2)+' '+((a.y+b.y)/2)+' '+b.x+' '+b.y;
+    } else {
+      d = 'M '+a.x+' '+a.y+' L '+b.x+' '+b.y;
+    }
+    E('path', {d:d, 'class':'conn '+(cls||'')}, parent);
+    E('circle', {cx:a.x, cy:a.y, r:3, 'class':'conn-dot'}, parent);
+    E('circle', {cx:b.x, cy:b.y, r:3, 'class':'conn-dot'}, parent);
+  }
+  function makeAstro(parent, x, y){
+    const g = E('g', {'class':'astro'}, parent);
+    const bob = E('g', {'class':'astro-bob'}, g);
+    E('ellipse', {cx:0, cy:15, rx:9, ry:3, fill:'rgba(34,211,238,.14)'}, bob);
+    E('rect', {x:-8, y:-4, width:5, height:12, rx:2, fill:'#94a3b8'}, bob);           // mochila
+    E('rect', {x:-4, y:-6, width:11, height:15, rx:4, fill:'#e2e8f0'}, bob);          // cuerpo
+    E('rect', {x:-3, y:9, width:4, height:5, rx:1.5, fill:'#94a3b8'}, bob);           // piernas
+    E('rect', {x:2,  y:9, width:4, height:5, rx:1.5, fill:'#94a3b8'}, bob);
+    E('circle', {cx:1.5, cy:-10, r:5.5, fill:'#f8fafc', stroke:'#94a3b8', 'stroke-width':1}, bob); // casco
+    E('circle', {cx:3, cy:-10, r:2.1, fill:'#22d3ee'}, bob);                          // visor
+    E('circle', {cx:-2, cy:1, r:1.6, fill:'#f87171'}, bob);                           // luz
+    g.style.transform = 'translate('+x+'px,'+y+'px)';
+    const api = {g:g, neutral:{x:x, y:y}, timer:null};
+    api.travel = function(points){
+      if (api.timer){ clearTimeout(api.timer); api.timer = null; }
+      let i = 0;
+      const step = function(){
+        const p = points[i++];
+        g.style.transform = 'translate('+p.x+'px,'+p.y+'px)';
+        if (i < points.length) api.timer = setTimeout(step, 620);
+      };
+      step();
+    };
+    return api;
+  }
+
+  // ======================= LAYOUT DEL ÁRBOL (coordenadas de plano) =======================
+  const TREE = {
+    bus: {x1:70, x2:613, y:40},
+    folders: [
+      {cx:40,  w:60,  y:28,  label:'core/'},
+      {cx:173, w:104, y:28,  label:'letrain/'},
+      {cx:393, w:80,  y:28,  label:'audio/'},
+      {cx:393, w:66,  y:136, label:'hud/'},
+      {cx:393, w:96,  y:288, label:'grammar/'},
+      {cx:613, w:104, y:28,  label:'schedule/'},
+      {cx:613, w:72,  y:150, label:'test/'}
+    ],
+    rails: [
+      {x:173, y1:52,  y2:228},
+      {x:393, y1:52,  y2:84},
+      {x:393, y1:160, y2:240},
+      {x:393, y1:312, y2:392},
+      {x:613, y1:52,  y2:84},
+      {x:613, y1:174, y2:206}
+    ],
+    files: [
+      {id:'CommandManager.java',    x:80,  y:70},
+      {id:'TrackGeometry.java',     x:80,  y:118},
+      {id:'RailBuilder.java',       x:80,  y:166},
+      {id:'TrackSwitch.java',       x:80,  y:214},
+      {id:'Silbato.java',           x:300, y:70},
+      {id:'HudRenderer.java',       x:300, y:178},
+      {id:'Theme.java',             x:300, y:226},
+      {id:'LeTrainLexer.g4',        x:300, y:330},
+      {id:'LeTrainParser.g4',       x:300, y:378},
+      {id:'ScheduleValidator.java', x:520, y:70},
+      {id:'SmokeTest.java',         x:520, y:192}
+    ]
+  };
+  const TREE_POS = {};
+  TREE.files.forEach(function(f){ TREE_POS[f.id] = f; });
+
+  function drawTree(parent, refs){
+    E('line', {x1:TREE.bus.x1, y1:TREE.bus.y, x2:TREE.bus.x2, y2:TREE.bus.y, 'class':'rail'}, parent);
+    TREE.rails.forEach(function(r){ E('line', {x1:r.x, y1:r.y1, x2:r.x, y2:r.y2, 'class':'rail'}, parent); });
+    TREE.folders.forEach(function(f){ folderChip(parent, f.cx - f.w/2, f.y, f.w, f.label); });
+    TREE.files.forEach(function(f){ fileCard(parent, f.id, f.x, f.y, 186, 28, refs); });
+  }
+
+  // ======================= VARIANTE 1 · PROFUNDIDAD (Z) =======================
+  function buildV1(){
+    const svg = document.getElementById('svg1');
+    const BX = 40, BY = 40, DX = 300, DY = 180;      // desplazamiento del plano delantero
+    const P = function(x, y, z){ return {x: BX + x + DX*z, y: BY + y + DY*z}; };
+    const refs = {files:{}, prs:{}};
+    panel(svg, BX, BY, 720, 450);
+    const gBack = E('g', {transform:'translate('+BX+','+BY+')'}, svg);
+    drawTree(gBack, refs);
+    panel(svg, BX+DX, BY+DY, 720, 340, true);
+    const gLines = E('g', {}, svg);
+    const gFront = E('g', {transform:'translate('+(BX+DX)+','+(BY+DY)+')'}, svg);
+    const POS = {'#42':[20,80], '#55':[260,80], '#37':[500,80], '#51':[80,200], '#33':[300,200], '#48':[520,200]};
+    PRS.forEach(function(pr){ prCard(gFront, pr, POS[pr.id][0], POS[pr.id][1], 200, 62, refs); });
+    tagPill(svg, BX+14, BY-30, 'PLANO TRASERO · FICHEROS · Z≈0');
+    const frontTag = 'PLANO DELANTERO · PRs E ISSUES · Z≈1';
+    tagPill(svg, BX+DX+720 - (frontTag.length*7.2+18) - 14, BY+DY-30, frontTag);
+    const neutral = P(360, 300, 0.5);
+    const astro = makeAstro(svg, neutral.x, neutral.y);
+    const anchorPr = function(pr){ const p = POS[pr.id]; return P(p[0]+100, p[1]+31, 1); };
+    const anchorFile = function(id){ const f = TREE_POS[id]; return P(f.x+93, f.y+14, 0); };
+    svg.addEventListener('click', function(){ selectPr(null); });
+    return {render:function(sel){
+      const pr = sel ? PRS.find(function(p){ return p.id === sel; }) : null;
+      for (const id in refs.files){
+        refs.files[id].classList.toggle('dim', !!pr && pr.files.indexOf(id) === -1);
+        refs.files[id].classList.toggle('lit', !!pr && pr.files.indexOf(id) !== -1);
+      }
+      for (const id in refs.prs){
+        refs.prs[id].classList.toggle('selected', id === sel);
+        refs.prs[id].classList.toggle('dim', !!sel && id !== sel);
+      }
+      gLines.innerHTML = '';
+      if (pr) pr.files.forEach(function(fid){ conn(gLines, anchorPr(pr), anchorFile(fid), 'live', 'straight'); });
+      const dest = pr ? anchorFile(pr.files[0]) : null;
+      astro.travel(pr ? [anchorPr(pr), {x:dest.x, y:dest.y-18}] : [astro.neutral]);
+    }};
+  }
+
+  // ======================= VARIANTE 2 · APILADO VERTICAL (Y) =======================
+  const V2FILES = [
+    ['CommandManager.java',    190, 560], ['TrackGeometry.java', 190, 606],
+    ['RailBuilder.java',       190, 652], ['TrackSwitch.java',   190, 698],
+    ['Silbato.java',           540, 556], ['HudRenderer.java',   540, 602],
+    ['Theme.java',             540, 648], ['LeTrainLexer.g4',    540, 694],
+    ['LeTrainParser.g4',       540, 740], ['ScheduleValidator.java', 890, 556],
+    ['SmokeTest.java',         890, 602]
+  ];
+  const V2POS = {};
+  V2FILES.forEach(function(f){ V2POS[f[0]] = {x:f[1], y:f[2]}; });
+
+  function buildV2(){
+    const svg = document.getElementById('svg2');
+    panel(svg, 40, 40, 1200, 240);
+    panel(svg, 40, 470, 1200, 390);
+    tagPill(svg, 54, 10, 'PLANTA 2 · PRs E ISSUES');
+    tagPill(svg, 54, 440, 'PLANTA 1 · ÁRBOL DE FICHEROS');
+    [283, 633, 983].forEach(function(x){ E('line', {x1:x, y1:290, x2:x, y2:460, 'class':'shaft'}, svg); });
+    tagPill(svg, 520, 352, 'HUECO · TRÁNSITO DEL ASTRONAUTA');
+    const refs = {files:{}, prs:{}};
+    const gFiles = E('g', {}, svg);
+    const cols = [
+      {x:190, y2:712, label:'letrain/'},
+      {x:540, y2:754, label:'audio · hud · grammar'},
+      {x:890, y2:616, label:'schedule · test'}
+    ];
+    cols.forEach(function(c){
+      E('line', {x1:c.x+93, y1:538, x2:c.x+93, y2:c.y2, 'class':'rail'}, gFiles);
+      folderChip(gFiles, c.x, 514, 186, c.label);
+    });
+    V2FILES.forEach(function(f){ fileCard(gFiles, f[0], f[1], f[2], 186, 28, refs); });
+    const gLines = E('g', {}, svg);        // cables por encima de los ficheros, bajo las tarjetas de PR
+    const rows = [
+      ['#42', 60, 90], ['#55', 295, 90], ['#37', 530, 90],
+      ['#51', 200, 170], ['#33', 440, 170], ['#48', 680, 170]
+    ];
+    rows.forEach(function(r){
+      const pr = PRS.find(function(p){ return p.id === r[0]; });
+      prCard(svg, pr, r[1], r[2], 200, 64, refs);
+    });
+    const anchorPr = function(pr){ const r = rows.find(function(rr){ return rr[0] === pr.id; }); return {x:r[1]+100, y:r[2]+70}; };
+    const anchorFile = function(id){ const f = V2POS[id]; return {x:f.x+93, y:f.y-6}; };
+    const astro = makeAstro(svg, 633, 400);
+    svg.addEventListener('click', function(){ selectPr(null); });
+    return {render:function(sel){
+      const pr = sel ? PRS.find(function(p){ return p.id === sel; }) : null;
+      for (const id in refs.files){
+        refs.files[id].classList.toggle('dim', !!pr && pr.files.indexOf(id) === -1);
+        refs.files[id].classList.toggle('lit', !!pr && pr.files.indexOf(id) !== -1);
+      }
+      for (const id in refs.prs){
+        refs.prs[id].classList.toggle('selected', id === sel);
+        refs.prs[id].classList.toggle('dim', !!sel && id !== sel);
+      }
+      gLines.innerHTML = '';
+      if (pr) pr.files.forEach(function(fid){ conn(gLines, anchorPr(pr), anchorFile(fid), 'live', 'cable'); });
+      const dest = pr ? anchorFile(pr.files[0]) : null;
+      astro.travel(pr ? [anchorPr(pr), {x:dest.x, y:dest.y-16}] : [astro.neutral]);
+    }};
+  }
+
+  // ======================= VARIANTE 3 · HÍBRIDO BARATO =======================
+  function buildV3(){
+    const svg = document.getElementById('svg3');
+    panel(svg, 40, 40, 1120, 660);
+    tagPill(svg, 54, 10, 'UN SOLO PLANO · PRs ANCLADAS JUNTO A SUS FICHEROS');
+    const gMain = E('g', {transform:'translate(168,64) scale(1.2)'}, svg);
+    const refs = {files:{}, prs:{}};
+    drawTree(gMain, refs);
+    const gLines = E('g', {}, gMain);
+    const POS = {'#42':[500,130], '#55':[480,424], '#51':[200,436], '#37':[10,436], '#33':[500,280], '#48':[110,280]};
+    PRS.forEach(function(pr){ prCard(gMain, pr, POS[pr.id][0], POS[pr.id][1], 170, 46, refs, true); });
+    const anchorPr = function(pr){ const p = POS[pr.id]; return {x:p[0]+85, y:p[1]+23}; };
+    const anchorFile = function(id){ const f = TREE_POS[id]; return {x:f.x+93, y:f.y+14}; };
+    const astro = makeAstro(gMain, 620, 370);
+    svg.addEventListener('click', function(){ selectPr(null); });
+    return {render:function(sel){
+      const pr = sel ? PRS.find(function(p){ return p.id === sel; }) : null;
+      for (const id in refs.files){
+        refs.files[id].classList.toggle('dim', !!pr && pr.files.indexOf(id) === -1);
+        refs.files[id].classList.toggle('lit', !!pr && pr.files.indexOf(id) !== -1);
+      }
+      for (const id in refs.prs){
+        refs.prs[id].classList.toggle('selected', id === sel);
+        refs.prs[id].classList.toggle('dim', !!sel && id !== sel);
+      }
+      gLines.innerHTML = '';
+      // En el híbrido todas las conexiones están siempre visibles: la seleccionada, viva.
+      PRS.forEach(function(p){
+        p.files.forEach(function(fid){
+          conn(gLines, anchorPr(p), anchorFile(fid), p.id === sel ? 'live' : 'faint', 'curve');
+        });
+      });
+      const dest = pr ? anchorFile(pr.files[0]) : null;
+      astro.travel(pr ? [anchorPr(pr), {x:dest.x, y:dest.y-18}] : [astro.neutral]);
+    }};
+  }
+
+  // ======================= ESTADO + TABS =======================
+  const variants = {v1: buildV1(), v2: buildV2(), v3: buildV3()};
+  let selected = null;
+
+  function selectPr(id){
+    selected = (selected === id) ? null : id;
+    renderAll();
+  }
+
+  function renderAll(){
+    const pr = selected ? PRS.find(function(p){ return p.id === selected; }) : null;
+    for (const k in variants) variants[k].render(selected);
+    ['v1','v2','v3'].forEach(function(k){
+      const hint = document.getElementById('hint-'+k);
+      if (!hint) return;
+      hint.textContent = pr
+        ? pr.id + ' · ' + pr.title + ' → ' + pr.files.length + ' ficheros conectados' + (pr.kind === 'issue' ? ' (issue)' : '')
+        : 'Selecciona una PR (o un fichero) para ver sus conexiones…';
+    });
+  }
+
+  function activateVariant(v){
+    document.querySelectorAll('.tab').forEach(function(b){ b.classList.toggle('active', b.dataset.v === v); });
+    document.querySelectorAll('.variant').forEach(function(s){ s.classList.toggle('active', s.id === v); });
+  }
+
+  document.querySelectorAll('.tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      activateVariant(btn.dataset.v);
+      try { history.replaceState(null, '', '#' + btn.dataset.v); }
+      catch (e) { location.hash = btn.dataset.v; }
+    });
+  });
+
+  // Deep link: #v2 o #v2/42 (variante y PR seleccionada)
+  const parts = decodeURIComponent(location.hash.replace(/^#/, '')).split('/');
+  if (parts[0] === 'v2' || parts[0] === 'v3') activateVariant(parts[0]);
+  if (parts[1]) {
+    const deepPr = PRS.find(function(p){ return p.id === '#' + parts[1]; });
+    if (deepPr) selected = deepPr.id;
+  }
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
