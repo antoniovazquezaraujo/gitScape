@@ -25,7 +25,6 @@ interface View {
 }
 
 interface ProgrammerEntry {
-  spotLight: THREE.SpotLight;
   programmerText: Text;
   commitText: Text;
   astronaut: THREE.Group<THREE.Object3DEventMap>;
@@ -104,12 +103,25 @@ export default class ViewImpl implements View {
   private readonly clock = new THREE.Clock();
   private pointerStart: { x: number; y: number } | null = null;
 
-  // Efectos de "toque": color del rayo según el estado del fichero y pulso
-  // de brillo (emissive) sobre el panel tocado.
+  // Efectos de "toque": ráfaga de rayos de colores según el estado del fichero
+  // y pulso blanco sutil (emissive) sobre el panel tocado.
   private readonly rayColorNeutral = 0xffff00;
   private readonly rayColorAdded = 0x00ff55;
   private readonly rayColorRemoved = 0xff2222;
-  private readonly glowDuration = 650;
+  private readonly rayRadius = 0.04;
+  private readonly rayLife = 0.16;
+  private readonly rayStaggerMs = 100;
+  private readonly rayOriginOffset = 0.2;
+  private readonly rayFadeOpacity = 0.95;
+  private readonly rayUp = new THREE.Vector3(0, 1, 0);
+  private readonly activeRays: {
+    mesh: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+    elapsed: number;
+    life: number;
+  }[] = [];
+  private readonly glowColorWhite = 0xffffff;
+  private readonly glowIntensity = 0.5;
+  private readonly glowDuration = 600;
   private glowTween: Tween<{ t: number }> | null = null;
   private glowMaterial: THREE.MeshLambertMaterial | null = null;
   private readonly glowBaseEmissive = new THREE.Color();
@@ -134,8 +146,6 @@ export default class ViewImpl implements View {
   public setStopped(): void {
     this.started = false;
     this.stopFollowing();
-    // En pausa/idle los rayos vuelven al color neutro.
-    this.resetProgrammerRayColors();
   }
   async initialize(): Promise<void> {
     this.movingStrategy = new MovingStrategy();
@@ -568,6 +578,7 @@ export default class ViewImpl implements View {
     this.tween.update();
     this.cameraTween?.update();
     this.glowTween?.update();
+    this.updateRays(delta);
     this.updateFollow(delta);
     this.controls!.update();
     this.interactionManager.update();
@@ -807,17 +818,19 @@ export default class ViewImpl implements View {
           if (touchObject) {
             const position = new THREE.Vector3();
             touchObject.getWorldPosition(position);
-            const rayColor = this.statusRayColor(file.status);
-            // El rayo (línea + foco) toma el color del estado desde que arranca
-            // el desplazamiento hacia el fichero: telegrafía la acción.
-            await this.moveProgrammerTo(programmer, position, rayColor);
+            const rayColors = this.rayColorsForFile(file);
+            await this.moveProgrammerTo(programmer, position);
+            // Al llegar: ráfaga de rayos (una por color) y pulso blanco, juntos.
             // Durante el viaje puede haber habido repaints (p. ej. alta de un
             // fichero): re-resolvemos el elemento visible para iluminar el panel
             // correcto y no una referencia ya desconectada de la escena.
-            await this.pulseFileGlow(this.resolveTouchObject(file), rayColor);
+            await Promise.all([
+              this.launchRayVolley(programmer, position, rayColors),
+              this.pulseFileGlow(this.resolveTouchObject(file))
+            ]);
           }
           if (file.status === 'removed') {
-            // El flash rojo ya se ha completado: ahora sí, se elimina del árbol.
+            // La ráfaga y el pulso ya se han completado: ahora sí, se elimina.
             this.model.removeElement(file.filename);
           }
         }
@@ -850,13 +863,10 @@ export default class ViewImpl implements View {
     commitLabel.sync();
     programmerGroup.add(commitLabel);
 
-    const spotLight = new THREE.SpotLight(this.rayColorNeutral, 1, 0, Math.PI / 2);
-    programmerGroup.add(spotLight);
     const astronaut = this.astronaut.clone();
     programmerGroup.add(astronaut);
 
     this.programmers[programmer] = {
-      spotLight: spotLight,
       programmerText: programmerLabel,
       commitText: commitLabel,
       astronaut: astronaut,
@@ -867,8 +877,6 @@ export default class ViewImpl implements View {
 
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
-      // Al retirarse a esperar, el rayo vuelve al color neutro.
-      this.setProgrammerRayColor(programmer, this.rayColorNeutral);
       const startPosition = this.programmers[programmer].group.position.clone();
       const endPosition = this.programmers[programmer].group.position.clone();
       endPosition.z = 2;
@@ -902,9 +910,7 @@ export default class ViewImpl implements View {
     });
   }
 
-  async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3, rayColor: number) {
-    // Fija el color del foco antes de arrancar el viaje (telegrafía la acción).
-    this.setProgrammerRayColor(programmer, rayColor);
+  async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3) {
     const startPosition = this.programmers[programmer].group.position.clone();
     const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 0.5, targetPosition.z + 2);
     await new Promise<void>(resolve => {
@@ -919,47 +925,84 @@ export default class ViewImpl implements View {
         })
         .start();
     });
-    await this.fireProgrammerRay(programmer, targetPosition, rayColor);
   }
 
-  async fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3, rayColor: number) {
-    const points = [];
-    points.push(new THREE.Vector3(this.programmers[programmer].group.position.x, this.programmers[programmer].group.position.y + 0.25, this.programmers[programmer].group.position.z));
-    points.push(new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
-    const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMaterial = new THREE.LineBasicMaterial({ color: rayColor });
-    const line = new THREE.Line(lineGeometry, lineMaterial);
-    this.scene!.add(line);
-    this.programmers[programmer].spotLight.intensity = 1;
-    await new Promise<void>(resolve => {
-      setTimeout(() => {
-        this.scene!.remove(line);
-        this.programmers[programmer].spotLight.intensity = 0;
-        resolve();
-      }, 300);
+  // Colores aplicables a un fichero: amarillo si hubo modificaciones, verde si
+  // se agregó código y rojo si se borró. Fallback amarillo si no hay señal.
+  private rayColorsForFile(file: any): number[] {
+    const colors: number[] = [];
+    if (file.status === 'modified') {
+      colors.push(this.rayColorNeutral);
+    }
+    if (file.additions > 0) {
+      colors.push(this.rayColorAdded);
+    }
+    if (file.deletions > 0) {
+      colors.push(this.rayColorRemoved);
+    }
+    if (colors.length === 0) {
+      colors.push(this.rayColorNeutral);
+    }
+    return colors;
+  }
+
+  // Ráfaga: un rayo por color en sucesión rápida. Resuelve cuando muere el último.
+  private launchRayVolley(programmer: string, targetPosition: THREE.Vector3, colors: number[]): Promise<void> {
+    return new Promise((resolve) => {
+      colors.forEach((color, index) => {
+        window.setTimeout(() => {
+          this.spawnRay(programmer, targetPosition, color);
+          if (index === colors.length - 1) {
+            window.setTimeout(resolve, this.rayLife * 1000);
+          }
+        }, index * this.rayStaggerMs);
+      });
     });
   }
 
-  private statusRayColor(status: string): number {
-    if (status === 'added') {
-      return this.rayColorAdded;
+  // Rayo de verdad: cilindro fino orientado con cuaternión, no una línea de 1 px.
+  private spawnRay(programmer: string, targetPosition: THREE.Vector3, color: number): void {
+    const origin = this.programmers[programmer].group.position;
+    const fromY = origin.y + this.rayOriginOffset;
+    const dx = targetPosition.x - origin.x;
+    const dy = targetPosition.y - fromY;
+    const dz = targetPosition.z - origin.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1e-4) {
+      return;
     }
-    if (status === 'removed') {
-      return this.rayColorRemoved;
-    }
-    return this.rayColorNeutral;
+    const direction = new THREE.Vector3(dx / length, dy / length, dz / length);
+    const geometry = new THREE.CylinderGeometry(this.rayRadius, this.rayRadius, length, 6, 1, true);
+    const material = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: this.rayFadeOpacity,
+      depthWrite: false
+    });
+    const beam = new THREE.Mesh(geometry, material);
+    beam.position.set(
+      origin.x + direction.x * length / 2,
+      fromY + direction.y * length / 2,
+      origin.z + direction.z * length / 2
+    );
+    beam.quaternion.setFromUnitVectors(this.rayUp, direction);
+    this.scene.add(beam);
+    this.activeRays.push({ mesh: beam, elapsed: 0, life: this.rayLife });
   }
 
-  private setProgrammerRayColor(programmer: string, color: number): void {
-    const entry = this.programmers[programmer];
-    if (entry) {
-      entry.spotLight.color.setHex(color);
-    }
-  }
-
-  private resetProgrammerRayColors(): void {
-    for (const programmer of Object.keys(this.programmers)) {
-      this.setProgrammerRayColor(programmer, this.rayColorNeutral);
+  // Desvanecido y limpieza de los rayos activos (sin residuos en escena).
+  private updateRays(delta: number): void {
+    for (let i = this.activeRays.length - 1; i >= 0; i--) {
+      const ray = this.activeRays[i];
+      ray.elapsed += delta;
+      const progress = Math.min(ray.elapsed / ray.life, 1);
+      ray.mesh.material.opacity = this.rayFadeOpacity * (1 - progress);
+      if (progress >= 1) {
+        this.scene.remove(ray.mesh);
+        ray.mesh.geometry.dispose();
+        ray.mesh.material.dispose();
+        this.activeRays.splice(i, 1);
+      }
     }
   }
 
@@ -1001,10 +1044,10 @@ export default class ViewImpl implements View {
     return meshes[0] ?? null;
   }
 
-  // Pulso corto de emissive en el color del estado. La curva sin(π·t) empieza y
-  // acaba en el color base, así que el material queda restaurado exactamente al
+  // Pulso blanco sutil (emissive) sobre el panel tocado. La curva sin(π·t) empieza
+  // y acaba en el color base, así que el material queda restaurado exactamente al
   // terminar (o si otro pulso lo interrumpe).
-  private pulseFileGlow(object: THREE.Object3D | undefined, color: number): Promise<void> {
+  private pulseFileGlow(object: THREE.Object3D | undefined): Promise<void> {
     const mesh = this.getPanelMesh(object);
     const material = mesh?.material;
     if (!(material instanceof THREE.MeshLambertMaterial)) {
@@ -1014,12 +1057,14 @@ export default class ViewImpl implements View {
     this.glowMaterial = material;
     this.glowBaseEmissive.copy(material.emissive);
     const state = { t: 0 };
-    const target = new THREE.Color(color);
+    const target = new THREE.Color(this.glowColorWhite);
     return new Promise<void>((resolve) => {
       this.glowTween = new Tween(state)
         .to({ t: 1 }, this.glowDuration)
         .onUpdate(() => {
-          material.emissive.copy(this.glowBaseEmissive).lerp(target, Math.sin(Math.PI * state.t));
+          material.emissive
+            .copy(this.glowBaseEmissive)
+            .lerp(target, this.glowIntensity * Math.sin(Math.PI * state.t));
         })
         .onComplete(() => {
           material.emissive.copy(this.glowBaseEmissive);
