@@ -10,15 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// githubAPI es la superficie del cliente de GitHub que consumen los handlers.
-// Permite sustituirlo por un doble en los tests.
-type githubAPI interface {
-	ListCommits(ctx context.Context, owner, repo, branch string) ([]*github.RepositoryCommit, error)
-	ListPullRequests(ctx context.Context, owner, repo string) ([]*github.PullRequest, error)
-	PullRequestCommits(ctx context.Context, owner, repo string, prs []*github.PullRequest) (map[int][]string, error)
-	GetTree(ctx context.Context, owner, repo, sha string) (*github.Tree, error)
-	GetCommitFiles(ctx context.Context, owner, repo, sha string) ([]*github.CommitFile, error)
-}
+// githubClient implementa dataSource contra la API de GitHub.
 
 type githubClient struct {
 	api    *github.Client
