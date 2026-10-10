@@ -104,6 +104,16 @@ export default class ViewImpl implements View {
   private readonly clock = new THREE.Clock();
   private pointerStart: { x: number; y: number } | null = null;
 
+  // Efectos de "toque": color del rayo según el estado del fichero y pulso
+  // de brillo (emissive) sobre el panel tocado.
+  private readonly rayColorNeutral = 0xffff00;
+  private readonly rayColorAdded = 0x00ff55;
+  private readonly rayColorRemoved = 0xff2222;
+  private readonly glowDuration = 650;
+  private glowTween: Tween<{ t: number }> | null = null;
+  private glowMaterial: THREE.MeshLambertMaterial | null = null;
+  private readonly glowBaseEmissive = new THREE.Color();
+
   // private pullRequests: {
   //   [number: number]: {
   //     graphicObject: THREE.Group<THREE.Object3DEventMap>,
@@ -124,6 +134,8 @@ export default class ViewImpl implements View {
   public setStopped(): void {
     this.started = false;
     this.stopFollowing();
+    // En pausa/idle los rayos vuelven al color neutro.
+    this.resetProgrammerRayColors();
   }
   async initialize(): Promise<void> {
     this.movingStrategy = new MovingStrategy();
@@ -555,6 +567,7 @@ export default class ViewImpl implements View {
     const delta = Math.min(Math.max(this.clock.getDelta(), 0.001), 0.1);
     this.tween.update();
     this.cameraTween?.update();
+    this.glowTween?.update();
     this.updateFollow(delta);
     this.controls!.update();
     this.interactionManager.update();
@@ -790,22 +803,21 @@ export default class ViewImpl implements View {
             await this.model.addTreeNode(commit.sha, file);
             this.paintView(this.model.getNode(), this.treeGroup);
           }
-          let fileObject: THREE.Group;
-          let firstVisibleParent = this.model.findFirstVisibleParent(file.filename);
-          let parent = this.model.find(file.filename)?.parent;
-          if (parent && parent === firstVisibleParent) {
-            fileObject = this.elements[file.filename];
-          } else {
-            fileObject = this.elements[firstVisibleParent!.getPath()];
-          }
-          if (fileObject) {
-            let position = new THREE.Vector3();
-            fileObject.getWorldPosition(position);
-            // we use parent to obtain the absolute position of the file, relative to his parent group
-            await this.moveProgrammerTo(programmer, position);
-            this.makeFileGlow(fileObject);
+          const touchObject = this.resolveTouchObject(file);
+          if (touchObject) {
+            const position = new THREE.Vector3();
+            touchObject.getWorldPosition(position);
+            const rayColor = this.statusRayColor(file.status);
+            // El rayo (línea + foco) toma el color del estado desde que arranca
+            // el desplazamiento hacia el fichero: telegrafía la acción.
+            await this.moveProgrammerTo(programmer, position, rayColor);
+            // Durante el viaje puede haber habido repaints (p. ej. alta de un
+            // fichero): re-resolvemos el elemento visible para iluminar el panel
+            // correcto y no una referencia ya desconectada de la escena.
+            await this.pulseFileGlow(this.resolveTouchObject(file), rayColor);
           }
           if (file.status === 'removed') {
+            // El flash rojo ya se ha completado: ahora sí, se elimina del árbol.
             this.model.removeElement(file.filename);
           }
         }
@@ -838,7 +850,7 @@ export default class ViewImpl implements View {
     commitLabel.sync();
     programmerGroup.add(commitLabel);
 
-    const spotLight = new THREE.SpotLight(0xffff00, 1, 0, Math.PI / 2);
+    const spotLight = new THREE.SpotLight(this.rayColorNeutral, 1, 0, Math.PI / 2);
     programmerGroup.add(spotLight);
     const astronaut = this.astronaut.clone();
     programmerGroup.add(astronaut);
@@ -855,7 +867,8 @@ export default class ViewImpl implements View {
 
   public moveProgrammerToWaitOrbit(programmer: string): Promise<void> {
     return new Promise((resolve) => {
-      // this.programmers[programmer].lightSphere.material.color.set(0x808080);
+      // Al retirarse a esperar, el rayo vuelve al color neutro.
+      this.setProgrammerRayColor(programmer, this.rayColorNeutral);
       const startPosition = this.programmers[programmer].group.position.clone();
       const endPosition = this.programmers[programmer].group.position.clone();
       endPosition.z = 2;
@@ -889,7 +902,9 @@ export default class ViewImpl implements View {
     });
   }
 
-  async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3) {
+  async moveProgrammerTo(programmer: string, targetPosition: THREE.Vector3, rayColor: number) {
+    // Fija el color del foco antes de arrancar el viaje (telegrafía la acción).
+    this.setProgrammerRayColor(programmer, rayColor);
     const startPosition = this.programmers[programmer].group.position.clone();
     const endPosition = new THREE.Vector3(targetPosition.x, targetPosition.y - 0.5, targetPosition.z + 2);
     await new Promise<void>(resolve => {
@@ -904,15 +919,15 @@ export default class ViewImpl implements View {
         })
         .start();
     });
-    await this.fireProgrammerRay(programmer, targetPosition);
+    await this.fireProgrammerRay(programmer, targetPosition, rayColor);
   }
 
-  async fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3) {
+  async fireProgrammerRay(programmer: string, targetPosition: THREE.Vector3, rayColor: number) {
     const points = [];
     points.push(new THREE.Vector3(this.programmers[programmer].group.position.x, this.programmers[programmer].group.position.y + 0.25, this.programmers[programmer].group.position.z));
     points.push(new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z));
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+    const lineMaterial = new THREE.LineBasicMaterial({ color: rayColor });
     const line = new THREE.Line(lineGeometry, lineMaterial);
     this.scene!.add(line);
     this.programmers[programmer].spotLight.intensity = 1;
@@ -925,14 +940,105 @@ export default class ViewImpl implements View {
     });
   }
 
-  // this method works only sometimes !
-  async makeFileGlow(boxGroup: THREE.Group) {
-    const originalMaterial = boxGroup.userData.box.material;
-    const glowingMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, opacity: 0.01 }); // Cambia el color según lo necesites
-    boxGroup.userData.box.material = glowingMaterial;
-    await new Promise<void>(resolve => setTimeout(() => {
-      boxGroup.userData.box.material = originalMaterial;
-      resolve();
-    }, 100));
+  private statusRayColor(status: string): number {
+    if (status === 'added') {
+      return this.rayColorAdded;
+    }
+    if (status === 'removed') {
+      return this.rayColorRemoved;
+    }
+    return this.rayColorNeutral;
+  }
+
+  private setProgrammerRayColor(programmer: string, color: number): void {
+    const entry = this.programmers[programmer];
+    if (entry) {
+      entry.spotLight.color.setHex(color);
+    }
+  }
+
+  private resetProgrammerRayColors(): void {
+    for (const programmer of Object.keys(this.programmers)) {
+      this.setProgrammerRayColor(programmer, this.rayColorNeutral);
+    }
+  }
+
+  // Re-resuelve el elemento visible en el momento del toque: el panel del fichero
+  // si está a la vista, o el del primer ancestro visible si su carpeta está
+  // plegada (que es su representación en pantalla).
+  private resolveTouchObject(file: any): THREE.Object3D | undefined {
+    const firstVisibleParent = this.model.findFirstVisibleParent(file.filename);
+    if (!firstVisibleParent) {
+      return undefined;
+    }
+    const parent = this.model.find(file.filename)?.parent;
+    if (parent && parent === firstVisibleParent) {
+      // El padre (carpeta) está plegado: el fichero no se dibuja, así que
+      // señalamos el panel de esa carpeta como su representación visible.
+      return this.elements[firstVisibleParent.getPath()];
+    }
+    // El fichero está dibujado (findFirstVisibleParent devuelve el propio nodo
+    // cuando el camino está visible).
+    return this.elements[file.filename] ?? this.elements[firstVisibleParent.getPath()];
+  }
+
+  // Nunca devuelve un grupo sin geometría: el mesh del panel (userData.box) o,
+  // como respaldo, el primer mesh real del subárbol.
+  private getPanelMesh(object: THREE.Object3D | undefined): THREE.Mesh | null {
+    if (!object) {
+      return null;
+    }
+    const box: unknown = object.userData.box;
+    if (box instanceof THREE.Mesh) {
+      return box;
+    }
+    const meshes: THREE.Mesh[] = [];
+    object.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        meshes.push(child);
+      }
+    });
+    return meshes[0] ?? null;
+  }
+
+  // Pulso corto de emissive en el color del estado. La curva sin(π·t) empieza y
+  // acaba en el color base, así que el material queda restaurado exactamente al
+  // terminar (o si otro pulso lo interrumpe).
+  private pulseFileGlow(object: THREE.Object3D | undefined, color: number): Promise<void> {
+    const mesh = this.getPanelMesh(object);
+    const material = mesh?.material;
+    if (!(material instanceof THREE.MeshLambertMaterial)) {
+      return Promise.resolve();
+    }
+    this.stopFileGlow();
+    this.glowMaterial = material;
+    this.glowBaseEmissive.copy(material.emissive);
+    const state = { t: 0 };
+    const target = new THREE.Color(color);
+    return new Promise<void>((resolve) => {
+      this.glowTween = new Tween(state)
+        .to({ t: 1 }, this.glowDuration)
+        .onUpdate(() => {
+          material.emissive.copy(this.glowBaseEmissive).lerp(target, Math.sin(Math.PI * state.t));
+        })
+        .onComplete(() => {
+          material.emissive.copy(this.glowBaseEmissive);
+          this.glowTween = null;
+          this.glowMaterial = null;
+          resolve();
+        })
+        .start();
+    });
+  }
+
+  private stopFileGlow(): void {
+    if (this.glowTween) {
+      this.glowTween.stop();
+      this.glowTween = null;
+    }
+    if (this.glowMaterial) {
+      this.glowMaterial.emissive.copy(this.glowBaseEmissive);
+      this.glowMaterial = null;
+    }
   }
 }
