@@ -7,6 +7,10 @@
   /* ... tus otros estilos ... */
 }
 
+#controls button {
+  cursor: pointer;
+}
+
 #content {
   height: calc(3% )
 }

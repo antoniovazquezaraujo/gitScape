@@ -32,6 +32,9 @@ export default class ViewImpl implements View {
   // private readonly fileTextColor = 0x00ff00;
   // private readonly folderTextColor = 0x000000;
   private readonly lineColor = 0x999999;
+  private readonly cameraFitMargin = 1.2;
+  private readonly cameraFitDuration = 700;
+  private readonly doubleClickDelay = 250;
 
 
   private folderWidth = 1;
@@ -49,6 +52,7 @@ export default class ViewImpl implements View {
   private renderer!: THREE.WebGLRenderer | undefined;
   private interactionManager!: InteractionManager;
   private tween!: Tween<THREE.Vector3>;
+  private cameraTween: Tween<{ t: number }> | null = null;
   private controls: OrbitControls | undefined;
   private controller!: Controller;
   private model!: Model;
@@ -62,9 +66,16 @@ export default class ViewImpl implements View {
   private prevButton!: HTMLButtonElement;
   private nextButton!: HTMLButtonElement;
   private toggleCommits!: HTMLButtonElement;
+  private homeButton!: HTMLButtonElement;
   private commitList!: HTMLUListElement;
   private visiblePullRequests: Set<string> = new Set<string>();
   private repaintAll: boolean = false;
+  private hasAutoFitted: boolean = false;
+  private pendingFolderClick: {
+    node: TreeNode;
+    object: THREE.Object3D;
+    timer: number;
+  } | null = null;
   private programmers: {
     [programmer: string]: {
       //spotLight: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
@@ -163,6 +174,7 @@ export default class ViewImpl implements View {
       }
 
     });
+    this.homeButton.addEventListener('click', () => this.focusHome());
 
 
 
@@ -177,37 +189,51 @@ export default class ViewImpl implements View {
           this.onStopSelected();
         }
       }
+      if (event.code === 'KeyC' || event.code === 'Escape') {
+        this.focusHome();
+      }
+      let orientationChanged = false;
       if (event.shiftKey) {
         if (event.code === 'KeyH') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.L);
           this.movingStrategy.setFileGrowDirection(GrowDirection.U);
+          orientationChanged = true;
         } else if (event.code === 'KeyJ') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.D);
           this.movingStrategy.setFileGrowDirection(GrowDirection.L);
+          orientationChanged = true;
         } else if (event.code === 'KeyK') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.U);
           this.movingStrategy.setFileGrowDirection(GrowDirection.R);
+          orientationChanged = true;
         } else if (event.code === 'KeyL') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.R);
           this.movingStrategy.setFileGrowDirection(GrowDirection.D);
+          orientationChanged = true;
         }
       } else {
         if (event.code === 'KeyH') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.L);
           this.movingStrategy.setFileGrowDirection(GrowDirection.D);
+          orientationChanged = true;
         } else if (event.code === 'KeyJ') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.D);
           this.movingStrategy.setFileGrowDirection(GrowDirection.R);
+          orientationChanged = true;
         } else if (event.code === 'KeyK') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.U);
           this.movingStrategy.setFileGrowDirection(GrowDirection.L);
+          orientationChanged = true;
         } else if (event.code === 'KeyL') {
           this.movingStrategy.setFolderGrowDirection(GrowDirection.R);
           this.movingStrategy.setFileGrowDirection(GrowDirection.U);
+          orientationChanged = true;
         }
       }
-      this.movingStrategy.setDistances(this.folderWidth, this.folderHeight, this.fileWidth, this.fileHeight);
-      this.start();
+      if (orientationChanged) {
+        this.movingStrategy.setDistances(this.folderWidth, this.folderHeight, this.fileWidth, this.fileHeight);
+        this.start();
+      }
     });
   }
   private async onCurrentCommitChange() {
@@ -237,6 +263,11 @@ export default class ViewImpl implements View {
     this.clearScene();
     this.paintView(this.model.getNode(), this.treeGroup);
 
+    // Solo la primera vez tras cargar: encuadra el árbol para no empezar perdido.
+    if (!this.hasAutoFitted) {
+      this.hasAutoFitted = true;
+      this.focusHome();
+    }
   }
 
   createControls() {
@@ -245,6 +276,7 @@ export default class ViewImpl implements View {
     this.prevButton = document.getElementById('prev') as HTMLButtonElement;
     this.nextButton = document.getElementById('next') as HTMLButtonElement;
     this.toggleCommits = document.getElementById('toggleCommits') as HTMLButtonElement;
+    this.homeButton = document.getElementById('home') as HTMLButtonElement;
     this.commitList = document.getElementById('commitList') as HTMLUListElement;
   }
 
@@ -279,6 +311,12 @@ export default class ViewImpl implements View {
 
   private createOrbitControls() {
     this.controls = new OrbitControls(this.camera, this.renderer!.domElement);
+    // Navegación más natural: el paneo se mueve en el plano de la pantalla
+    // y el zoom acerca hacia el cursor.
+    this.controls.screenSpacePanning = true;
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.1;
+    this.controls.zoomToCursor = true;
   }
   private createLights() {
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -318,10 +356,85 @@ export default class ViewImpl implements View {
     this.controller.commitIndexChanged(commitIndex);
   }
 
+  private focusHome(): void {
+    const box = this.getTreeBox();
+    if (box) {
+      this.animateCameraToBox(box);
+    }
+  }
+
+  private focusFolder(folderElement: THREE.Object3D): void {
+    // El padre del panel de carpeta agrupa la carpeta y todo su contenido.
+    const container = folderElement.parent?.parent ?? folderElement;
+    const box = this.getObjectBox(container);
+    if (box) {
+      this.animateCameraToBox(box, 1.25);
+    }
+  }
+
+  private getTreeBox(): THREE.Box3 | null {
+    if (!this.treeGroup) {
+      return null;
+    }
+    return this.getObjectBox(this.treeGroup);
+  }
+
+  private getObjectBox(object: THREE.Object3D): THREE.Box3 | null {
+    object.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(object);
+    const bounds = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+    if (box.isEmpty() || bounds.some((value) => !Number.isFinite(value))) {
+      return null;
+    }
+    return box;
+  }
+
+  private animateCameraToBox(box: THREE.Box3, margin: number = this.cameraFitMargin): void {
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.1);
+    // Distancia que encaja la esfera envolvente respetando fov y aspect ratio.
+    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * this.camera.aspect);
+    const distance = Math.max((margin * radius) / Math.sin(Math.min(verticalFov, horizontalFov) / 2), 2.5);
+
+    // Conserva la dirección de vista actual: solo cambia la distancia y el centro.
+    const direction = new THREE.Vector3().subVectors(this.camera.position, this.controls!.target);
+    if (direction.lengthSq() < Number.EPSILON) {
+      direction.set(0, 0, 1);
+    }
+    direction.normalize();
+
+    // Evita que el plano lejano recorte escenas grandes.
+    this.camera.far = Math.max(this.camera.far, distance + radius * 4);
+    this.camera.updateProjectionMatrix();
+
+    const endPosition = center.clone().addScaledVector(direction, distance);
+    this.animateCameraTo(endPosition, center);
+  }
+
+  private animateCameraTo(position: THREE.Vector3, target: THREE.Vector3): void {
+    this.cameraTween?.stop();
+    const state = { t: 0 };
+    const startPosition = this.camera.position.clone();
+    const startTarget = this.controls!.target.clone();
+    this.cameraTween = new Tween(state)
+      .to({ t: 1 }, this.cameraFitDuration)
+      .easing(Easing.Cubic.InOut)
+      .onUpdate(() => {
+        this.camera.position.lerpVectors(startPosition, position, state.t);
+        this.controls!.target.lerpVectors(startTarget, target, state.t);
+      })
+      .onComplete(() => {
+        this.cameraTween = null;
+      })
+      .start();
+  }
+
   animate(): void {
     window.requestAnimationFrame(() => this.animate());
-    this.controls!.update();
     this.tween.update();
+    this.cameraTween?.update();
+    this.controls!.update();
     this.interactionManager.update();
     this.renderer!.render(this.scene!, this.camera!);
     if (this.repaintAll) {
@@ -385,21 +498,42 @@ export default class ViewImpl implements View {
     this.interactionManager.add(folderBox);
 
     folderBox.addEventListener('click', (event: any) => {
-      console.log(node.getPath());
-      console.log(event.target.children[0].userData.elementName);
-
-      if (node.visible) {
-        node.visible = false;
-      } else {
-        node.visible = true;
-      }
-      this.onTreeNodeChange();
       event.cancelBubble = true;
       event.stopPropagation();
+      this.handleFolderClick(node, folderBox);
     });
     myGroup.add(folderBox);
     group.add(myGroup);
   }
+
+  // three.interactive no emite 'dblclick': distinguimos clic simple y doble clic
+  // con un temporizador corto. El doble clic enfoca la carpeta sin plegarla.
+  private handleFolderClick(node: TreeNode, folderElement: THREE.Object3D): void {
+    const pending = this.pendingFolderClick;
+    if (pending && pending.object === folderElement) {
+      window.clearTimeout(pending.timer);
+      this.pendingFolderClick = null;
+      this.focusFolder(folderElement);
+      return;
+    }
+    if (pending) {
+      // Otro clic sobre una carpeta distinta: resuelve ya el pendiente como simple.
+      window.clearTimeout(pending.timer);
+      this.pendingFolderClick = null;
+      pending.node.visible = !pending.node.visible;
+      this.onTreeNodeChange();
+    }
+    this.pendingFolderClick = {
+      node,
+      object: folderElement,
+      timer: window.setTimeout(() => {
+        this.pendingFolderClick = null;
+        node.visible = !node.visible;
+        this.onTreeNodeChange();
+      }, this.doubleClickDelay),
+    };
+  }
+
   public paintFolderContent(node: TreeNode, group: THREE.Group) {
     let index = 0;
     const filesGroup = new THREE.Group();
