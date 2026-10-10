@@ -89,15 +89,27 @@ export default class ViewImpl implements View {
   private followEnabled: boolean = false;
   private followTarget: ProgrammerEntry | null = null;
   private followInitialized: boolean = false;
+  // Rumbo de persecución en el plano de movimiento (X/Y), unitario y "pegajoso":
+  // si no hay velocidad horizontal suficiente se conserva el último rumbo válido.
+  private readonly followHeading = new THREE.Vector2();
+  private hasFollowHeading: boolean = false;
   private readonly followDistance = 2.5;
   private readonly followHeight = 0.8;
   private readonly followLerpSpeed = 4;
+  private readonly followHeadingMinSpeed = 0.1;
+  private readonly followHeadingLerpSpeed = 6;
+  private readonly followMinHeight = 0.2;
+  private readonly followMinDistance = 1.5;
+  private readonly followLookAhead = 0.25;
+  private readonly followLookAheadHeight = 0.15;
   private readonly followDragThreshold = 5;
-  private readonly followVelocity = new THREE.Vector3();
-  private readonly followFrameVelocity = new THREE.Vector3();
+  // Velocidad horizontal (X/Y) del astronauta, suavizada (Vector2: se ignora Z).
+  private readonly followVelocity = new THREE.Vector2();
+  private readonly followFrameVelocity = new THREE.Vector2();
   private readonly followLastPosition = new THREE.Vector3();
   private readonly followTargetPosition = new THREE.Vector3();
   private readonly followDesiredPosition = new THREE.Vector3();
+  private readonly followLookTarget = new THREE.Vector3();
   private readonly clock = new THREE.Clock();
   private pointerStart: { x: number; y: number } | null = null;
 
@@ -423,7 +435,8 @@ export default class ViewImpl implements View {
     }
     this.followEnabled = true;
     this.followInitialized = false;
-    this.followVelocity.set(0, 0, 0);
+    this.followVelocity.set(0, 0);
+    // El rumbo se conserva al reactivar: evita giros bruscos innecesarios.
     this.cancelCameraTween();
     if (this.controls) {
       this.controls.enabled = false;
@@ -433,10 +446,24 @@ export default class ViewImpl implements View {
   private stopFollowing(): void {
     this.followEnabled = false;
     this.followInitialized = false;
-    this.followVelocity.set(0, 0, 0);
+    this.followVelocity.set(0, 0);
     if (this.controls) {
       this.controls.enabled = true;
     }
+  }
+
+  private setFollowTarget(target: ProgrammerEntry): void {
+    if (this.followTarget === target) {
+      return;
+    }
+    this.followTarget = target;
+    // Rebasa el seguimiento al cambiar de astronauta: sin arrastrar la posición
+    // ni la velocidad del anterior (evita picos), pero conservando el rumbo
+    // para no dar un latigazo de cámara.
+    this.followInitialized = false;
+    this.followVelocity.set(0, 0);
+    this.followFrameVelocity.set(0, 0);
+    this.followLastPosition.set(0, 0, 0);
   }
 
   private toggleFollow(): void {
@@ -454,29 +481,96 @@ export default class ViewImpl implements View {
     this.followTarget.group.getWorldPosition(this.followTargetPosition);
 
     if (!this.followInitialized) {
+      // Rebase al empezar o al cambiar de astronauta: sin picos de velocidad.
       this.followInitialized = true;
       this.followLastPosition.copy(this.followTargetPosition);
     }
 
-    // Velocidad suavizada del astronauta para saber hacia dónde se mueve.
-    this.followFrameVelocity.copy(this.followTargetPosition).sub(this.followLastPosition);
+    // Velocidad horizontal (X/Y) en unidades/segundo, suavizada e independiente
+    // del framerate. La componente Z se ignora: los saltos de órbita de trabajo/
+    // espera no deben lanzar la cámara a posiciones raras.
+    this.followFrameVelocity.set(
+      (this.followTargetPosition.x - this.followLastPosition.x) / delta,
+      (this.followTargetPosition.y - this.followLastPosition.y) / delta
+    );
     this.followVelocity.lerp(this.followFrameVelocity, 1 - Math.exp(-10 * delta));
     this.followLastPosition.copy(this.followTargetPosition);
 
-    const speed = this.followVelocity.length();
-    if (speed > 0.0005) {
-      // "Desde detrás": opuesto al vector de movimiento, un poco por encima.
-      this.followDesiredPosition.copy(this.followVelocity).multiplyScalar(-this.followDistance / speed);
-      this.followDesiredPosition.y += this.followHeight;
-    } else {
-      // En reposo: offset fijo detrás/encima del astronauta.
-      this.followDesiredPosition.set(0, this.followHeight, this.followDistance);
+    this.updateFollowHeading(delta);
+
+    // Solo offset horizontal (plano X/Y) + altura (Y). El suelo de altura hace
+    // imposible que la cámara quede por debajo del astronauta.
+    const offsetY = Math.max(
+      this.followHeight - this.followHeading.y * this.followDistance,
+      this.followMinHeight
+    );
+    this.followDesiredPosition.set(
+      this.followTargetPosition.x - this.followHeading.x * this.followDistance,
+      this.followTargetPosition.y + offsetY,
+      this.followTargetPosition.z
+    );
+
+    // Un rumbo casi vertical degeneraría el offset en una cámara pegada al
+    // astronauta: garantiza una distancia mínima para no cruzar el near plane.
+    const offsetLength = Math.hypot(
+      this.followDesiredPosition.x - this.followTargetPosition.x,
+      this.followDesiredPosition.y - this.followTargetPosition.y
+    );
+    if (offsetLength < this.followMinDistance) {
+      const scale = this.followMinDistance / Math.max(offsetLength, 1e-6);
+      this.followDesiredPosition
+        .sub(this.followTargetPosition)
+        .multiplyScalar(scale)
+        .add(this.followTargetPosition);
     }
-    this.followDesiredPosition.add(this.followTargetPosition);
 
     const alpha = 1 - Math.exp(-this.followLerpSpeed * delta);
     this.camera.position.lerp(this.followDesiredPosition, alpha);
-    this.controls!.target.lerp(this.followTargetPosition, alpha);
+
+    // Mira un poco por delante del astronauta para intuir qué archivo va a tocar.
+    this.followLookTarget.set(
+      this.followTargetPosition.x + this.followHeading.x * this.followLookAhead,
+      this.followTargetPosition.y + this.followLookAheadHeight + this.followHeading.y * this.followLookAhead,
+      this.followTargetPosition.z
+    );
+    this.controls!.target.lerp(this.followLookTarget, alpha);
+  }
+
+  private updateFollowHeading(delta: number): void {
+    const speed = this.followVelocity.length();
+    if (speed > this.followHeadingMinSpeed) {
+      const desiredAngle = Math.atan2(this.followVelocity.y, this.followVelocity.x);
+      if (!this.hasFollowHeading) {
+        this.followHeading.set(Math.cos(desiredAngle), Math.sin(desiredAngle));
+        this.hasFollowHeading = true;
+        return;
+      }
+      const currentAngle = Math.atan2(this.followHeading.y, this.followHeading.x);
+      // Arco mínimo entre ángulos: evita giros largos y "flips" al cambiar de sentido.
+      const angleDelta = Math.atan2(
+        Math.sin(desiredAngle - currentAngle),
+        Math.cos(desiredAngle - currentAngle)
+      );
+      const newAngle = currentAngle + angleDelta * (1 - Math.exp(-this.followHeadingLerpSpeed * delta));
+      this.followHeading.set(Math.cos(newAngle), Math.sin(newAngle));
+      return;
+    }
+
+    if (!this.hasFollowHeading) {
+      // Arranque sin rumbo: dirección horizontal cámara→objetivo, para entrar
+      // suavemente. Si es degenerada (cámara y objetivo alineados), arriba.
+      const toTargetX = this.followTargetPosition.x - this.camera.position.x;
+      const toTargetY = this.followTargetPosition.y - this.camera.position.y;
+      const horizontalLength = Math.hypot(toTargetX, toTargetY);
+      if (horizontalLength > 1e-6) {
+        this.followHeading.set(toTargetX / horizontalLength, toTargetY / horizontalLength);
+      } else {
+        this.followHeading.set(0, 1);
+      }
+      this.hasFollowHeading = true;
+    }
+    // Con velocidad bajo el umbral se mantiene el último rumbo válido: nunca
+    // se vuelve a un offset fijo.
   }
 
   private getTreeBox(): THREE.Box3 | null {
@@ -544,8 +638,9 @@ export default class ViewImpl implements View {
 
   animate(): void {
     window.requestAnimationFrame(() => this.animate());
-    // Acota delta para que un frame perdido no dé un salto al suavizado.
-    const delta = Math.min(this.clock.getDelta(), 0.1);
+    // Acota delta para que un frame perdido no dé un salto al suavizado
+    // (y evita dividir por cero en el primer frame, donde getDelta() es 0).
+    const delta = Math.min(Math.max(this.clock.getDelta(), 0.001), 0.1);
     this.tween.update();
     this.cameraTween?.update();
     this.updateFollow(delta);
@@ -772,7 +867,7 @@ export default class ViewImpl implements View {
       this.createProgrammer(programmer);
     }
     // El astronauta que trabaja en este commit pasa a ser el objetivo del seguimiento.
-    this.followTarget = this.programmers[programmer];
+    this.setFollowTarget(this.programmers[programmer]);
     this.programmers[programmer].commitText.textContent = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
       this.model.getCommitFiles(commit.sha).then(async (files: any) => {
