@@ -29,6 +29,17 @@ cp .env.example .env   # edita y añade tu token
 npm run dev            # → http://localhost:5173/
 ```
 
+### ⚡ Arranque rápido con `dev.sh`
+
+Si tienes un clon local del repo que quieres visualizar, el script levanta backend (modo local) + frontend en un solo comando:
+
+```bash
+./dev.sh                          # ~/dev/letrain (rama develop)
+./dev.sh ~/dev/mi-repo main       # otro clon y otra rama
+```
+
+Compila el backend Go, arranca Vite y te muestra la URL; `Ctrl+C` para ambos.
+
 ### Configuración (`.env`)
 
 | Variable | Descripción | Por defecto |
