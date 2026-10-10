@@ -7,7 +7,8 @@ Visualización 3D interactiva de la historia de un repositorio de GitHub. Los co
 - **Árbol 3D del repositorio**: carpetas y archivos como paneles flotantes conectados, con etiquetas de texto en 3D.
 - **Línea temporal**: slider + lista de commits (fecha, autor, mensaje) para navegar por la historia.
 - **Reproducción animada**: pulsa `Espacio` y observa cómo el árbol crece commit a commit; cada "programador" (astronauta) trabaja sobre los archivos cambiados.
-- **Carpetas plegables**: clic en una carpeta para contraer/expandir su contenido.
+- **Carpetas plegables**: clic en una carpeta para contraer/expandir su contenido; doble clic para volar hasta ella.
+- **Cámara cinematográfica**: encuadre suave de todo el árbol, foco en carpetas y seguimiento del astronauta activo durante la reproducción.
 - **Detección de PRs**: identifica los pull requests asociados a cada commit.
 - **Presentación configurable**: las teclas `H`, `J`, `K`, `L` cambian la dirección de crecimiento del árbol.
 
@@ -78,7 +79,11 @@ Medidas reales: repos de 506 commits/75 PRs → frío ~6 s, caliente ~15 ms; en 
 | Orbitar la cámara | Arrastrar con el ratón |
 | Navegar por la historia | Slider o botones `‹` `›` |
 | Reproducir/pausar la historia | `Espacio` |
+| Centrar la vista (encuadrar todo el árbol) | Botón `Centrar` o `C` |
+| Volver a la vista general | `Esc` |
+| Enfocar una carpeta y su contenido | Doble clic sobre la carpeta |
 | Plegar/desplegar una carpeta | Clic sobre la carpeta |
+| Seguir/dejar de seguir al astronauta activo | `F` (se activa al reproducir; arrastrar sale) |
 | Mostrar/ocultar la lista de commits | Botón `Toggle Commits` |
 | Cambiar la orientación del árbol | `H` `J` `K` `L` (y con `Shift`) |
 

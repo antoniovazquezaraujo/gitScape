@@ -24,6 +24,14 @@ interface View {
 
 }
 
+interface ProgrammerEntry {
+  spotLight: THREE.SpotLight;
+  programmerText: Text;
+  commitText: Text;
+  astronaut: THREE.Group<THREE.Object3DEventMap>;
+  group: THREE.Group<THREE.Object3DEventMap>;
+}
+
 export default class ViewImpl implements View {
 
   private readonly folderColor = 0xAA5555;
@@ -76,16 +84,22 @@ export default class ViewImpl implements View {
     object: THREE.Object3D;
     timer: number;
   } | null = null;
-  private programmers: {
-    [programmer: string]: {
-      //spotLight: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial, THREE.Object3DEventMap>,
-      spotLight: THREE.SpotLight,
-      programmerText: Text,
-      commitText: Text,
-      astronaut: THREE.Group<THREE.Object3DEventMap>,
-      group: THREE.Group<THREE.Object3DEventMap>
-    }
-  } = {};
+  private programmers: { [programmer: string]: ProgrammerEntry } = {};
+  // Seguimiento del astronauta activo durante la reproducción.
+  private followEnabled: boolean = false;
+  private followTarget: ProgrammerEntry | null = null;
+  private followInitialized: boolean = false;
+  private readonly followDistance = 2.5;
+  private readonly followHeight = 0.8;
+  private readonly followLerpSpeed = 4;
+  private readonly followDragThreshold = 5;
+  private readonly followVelocity = new THREE.Vector3();
+  private readonly followFrameVelocity = new THREE.Vector3();
+  private readonly followLastPosition = new THREE.Vector3();
+  private readonly followTargetPosition = new THREE.Vector3();
+  private readonly followDesiredPosition = new THREE.Vector3();
+  private readonly clock = new THREE.Clock();
+  private pointerStart: { x: number; y: number } | null = null;
 
   // private pullRequests: {
   //   [number: number]: {
@@ -102,9 +116,11 @@ export default class ViewImpl implements View {
   }
   public setStarted(): void {
     this.started = true;
+    this.startFollowing();
   }
   public setStopped(): void {
     this.started = false;
+    this.stopFollowing();
   }
   async initialize(): Promise<void> {
     this.movingStrategy = new MovingStrategy();
@@ -176,7 +192,25 @@ export default class ViewImpl implements View {
     });
     this.homeButton.addEventListener('click', () => this.focusHome());
 
-
+    // Con los controles deshabilitados (seguimiento) OrbitControls no emite 'start',
+    // así que detectamos aquí un arrastre real para salir del modo.
+    const canvas = this.renderer!.domElement;
+    canvas.addEventListener('pointerdown', (event: PointerEvent) => {
+      this.pointerStart = { x: event.clientX, y: event.clientY };
+    });
+    canvas.addEventListener('pointermove', (event: PointerEvent) => {
+      if (!this.followEnabled || !this.pointerStart) {
+        return;
+      }
+      const dx = event.clientX - this.pointerStart.x;
+      const dy = event.clientY - this.pointerStart.y;
+      if (dx * dx + dy * dy > this.followDragThreshold * this.followDragThreshold) {
+        this.stopFollowing();
+      }
+    });
+    canvas.addEventListener('pointerup', () => {
+      this.pointerStart = null;
+    });
 
     window.addEventListener('resize', () => this.onWindowResize(), false);
     document.addEventListener('keydown', async (event) => {
@@ -191,6 +225,9 @@ export default class ViewImpl implements View {
       }
       if (event.code === 'KeyC' || event.code === 'Escape') {
         this.focusHome();
+      }
+      if (event.code === 'KeyF') {
+        this.toggleFollow();
       }
       let orientationChanged = false;
       if (event.shiftKey) {
@@ -317,6 +354,12 @@ export default class ViewImpl implements View {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
     this.controls.zoomToCursor = true;
+    // Cualquier interacción manual sale del modo seguimiento y
+    // cancela un vuelo de cámara en curso para no pelearse con él.
+    this.controls.addEventListener('start', () => {
+      this.stopFollowing();
+      this.cancelCameraTween();
+    });
   }
   private createLights() {
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -357,6 +400,7 @@ export default class ViewImpl implements View {
   }
 
   private focusHome(): void {
+    this.stopFollowing();
     const box = this.getTreeBox();
     if (box) {
       this.animateCameraToBox(box);
@@ -364,12 +408,75 @@ export default class ViewImpl implements View {
   }
 
   private focusFolder(folderElement: THREE.Object3D): void {
+    this.stopFollowing();
     // El padre del panel de carpeta agrupa la carpeta y todo su contenido.
     const container = folderElement.parent?.parent ?? folderElement;
     const box = this.getObjectBox(container);
     if (box) {
       this.animateCameraToBox(box, 1.25);
     }
+  }
+
+  private startFollowing(): void {
+    if (this.followEnabled) {
+      return;
+    }
+    this.followEnabled = true;
+    this.followInitialized = false;
+    this.followVelocity.set(0, 0, 0);
+    this.cancelCameraTween();
+    if (this.controls) {
+      this.controls.enabled = false;
+    }
+  }
+
+  private stopFollowing(): void {
+    this.followEnabled = false;
+    this.followInitialized = false;
+    this.followVelocity.set(0, 0, 0);
+    if (this.controls) {
+      this.controls.enabled = true;
+    }
+  }
+
+  private toggleFollow(): void {
+    if (this.followEnabled) {
+      this.stopFollowing();
+    } else if (this.followTarget) {
+      this.startFollowing();
+    }
+  }
+
+  private updateFollow(delta: number): void {
+    if (!this.followEnabled || !this.followTarget) {
+      return;
+    }
+    this.followTarget.group.getWorldPosition(this.followTargetPosition);
+
+    if (!this.followInitialized) {
+      this.followInitialized = true;
+      this.followLastPosition.copy(this.followTargetPosition);
+    }
+
+    // Velocidad suavizada del astronauta para saber hacia dónde se mueve.
+    this.followFrameVelocity.copy(this.followTargetPosition).sub(this.followLastPosition);
+    this.followVelocity.lerp(this.followFrameVelocity, 1 - Math.exp(-10 * delta));
+    this.followLastPosition.copy(this.followTargetPosition);
+
+    const speed = this.followVelocity.length();
+    if (speed > 0.0005) {
+      // "Desde detrás": opuesto al vector de movimiento, un poco por encima.
+      this.followDesiredPosition.copy(this.followVelocity).multiplyScalar(-this.followDistance / speed);
+      this.followDesiredPosition.y += this.followHeight;
+    } else {
+      // En reposo: offset fijo detrás/encima del astronauta.
+      this.followDesiredPosition.set(0, this.followHeight, this.followDistance);
+    }
+    this.followDesiredPosition.add(this.followTargetPosition);
+
+    const alpha = 1 - Math.exp(-this.followLerpSpeed * delta);
+    this.camera.position.lerp(this.followDesiredPosition, alpha);
+    this.controls!.target.lerp(this.followTargetPosition, alpha);
   }
 
   private getTreeBox(): THREE.Box3 | null {
@@ -412,8 +519,13 @@ export default class ViewImpl implements View {
     this.animateCameraTo(endPosition, center);
   }
 
-  private animateCameraTo(position: THREE.Vector3, target: THREE.Vector3): void {
+  private cancelCameraTween(): void {
     this.cameraTween?.stop();
+    this.cameraTween = null;
+  }
+
+  private animateCameraTo(position: THREE.Vector3, target: THREE.Vector3): void {
+    this.cancelCameraTween();
     const state = { t: 0 };
     const startPosition = this.camera.position.clone();
     const startTarget = this.controls!.target.clone();
@@ -432,8 +544,11 @@ export default class ViewImpl implements View {
 
   animate(): void {
     window.requestAnimationFrame(() => this.animate());
+    // Acota delta para que un frame perdido no dé un salto al suavizado.
+    const delta = Math.min(this.clock.getDelta(), 0.1);
     this.tween.update();
     this.cameraTween?.update();
+    this.updateFollow(delta);
     this.controls!.update();
     this.interactionManager.update();
     this.renderer!.render(this.scene!, this.camera!);
@@ -656,6 +771,8 @@ export default class ViewImpl implements View {
     if (!this.programmers[programmer]) {
       this.createProgrammer(programmer);
     }
+    // El astronauta que trabaja en este commit pasa a ser el objetivo del seguimiento.
+    this.followTarget = this.programmers[programmer];
     this.programmers[programmer].commitText.textContent = commit.commit.message;
     await this.moveProgrammerToWorkOrbit(programmer).then(() => {
       this.model.getCommitFiles(commit.sha).then(async (files: any) => {
