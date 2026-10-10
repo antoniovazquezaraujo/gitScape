@@ -15,21 +15,18 @@ import (
 func main() {
 	addr := flag.String("addr", ":8080", "dirección de escucha del servidor")
 	cacheTTL := flag.Duration("cache-ttl", 5*time.Minute, "TTL de la caché para datos mutables (commits y PRs)")
+	repoPath := flag.String("repo-path", "", "ruta a un clon local; si se indica, commits/árboles/ficheros se leen del disco con git (los PRs siguen viniendo de GitHub si hay token y remoto reconocible)")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		logger.Warn("GITHUB_TOKEN no definido: se usará la API de GitHub sin autenticar (límite 60 peticiones/hora)")
-	}
-
-	client, err := newGitHubClient(token, logger)
+	source, err := buildDataSource(*repoPath, token, logger)
 	if err != nil {
-		logger.Error("creando cliente de GitHub", "err", err)
+		logger.Error("configurando la fuente de datos", "err", err)
 		os.Exit(1)
 	}
-	h := newHandlers(client, *cacheTTL, logger)
+	h := newHandlers(source, *cacheTTL, logger)
 
 	mux := http.NewServeMux()
 	h.routes(mux)

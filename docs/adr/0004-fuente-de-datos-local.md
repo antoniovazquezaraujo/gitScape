@@ -1,6 +1,6 @@
 # ADR 0004: Fuente de datos local (git) además de la API remota
 
-- **Estado**: Sustituida por el ADR 0006 (el modo local pasa a ser la fase 2 del backend Go)
+- **Estado**: Aceptada e implementada (fase 2 del backend Go, ver ADR 0006)
 - **Fecha**: 2026-10-09
 
 ## Contexto

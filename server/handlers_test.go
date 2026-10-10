@@ -89,7 +89,7 @@ func (f *fakeGitHub) GetCommitFiles(_ context.Context, _, _, _ string) ([]*githu
 	}, nil
 }
 
-func newTestServer(f githubAPI) *httptest.Server {
+func newTestServer(f dataSource) *httptest.Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h := newHandlers(f, time.Minute, logger)
 	mux := http.NewServeMux()

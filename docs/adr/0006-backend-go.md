@@ -22,6 +22,7 @@ Introducir un backend en Go (`server/`) que:
 - Cachea en memoria: TTL configurable (`-cache-ttl`, 5 min por defecto) para datos mutables; sin caducidad para datos inmutables por SHA (árboles y ficheros de commits).
 - Deduplica peticiones concurrentes con `singleflight`.
 - Mantiene el token en el servidor (`GITHUB_TOKEN`), nunca en el navegador.
+- Abstrae la fuente de datos tras la interfaz `dataSource`: API de GitHub (`githubClient`) o clon local vía git (`localSource`, con PRs opcionales de GitHub).
 
 El frontend usa el backend cuando `VITE_API_URL` está definido (adaptador en `GitModel`); sin él mantiene el modo directo con Octokit. En desarrollo, el proxy de Vite redirige `/api` a `http://localhost:8080`.
 
@@ -36,5 +37,5 @@ El frontend usa el backend cuando `VITE_API_URL` está definido (adaptador en `G
 
 0. **Esta PR**: proxy + caché + agregación + adaptador del frontend. ✅
 1. Caché en disco (persistente entre reinicios) y prefetch para la reproducción.
-2. Modo local: flag `--repo-path` para leer del clon con `git` (cubre el ADR 0004).
+2. ✅ Modo local: flag `--repo-path` para leer del clon con `git`; los PRs siguen viniendo de GitHub si hay token y remoto reconocible (cubre el ADR 0004). Se priorizó sobre la fase 1 por ser el caso de uso principal.
 3. Streaming (SSE) para la reproducción y despliegue público.

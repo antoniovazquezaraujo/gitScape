@@ -25,16 +25,16 @@ type stateResponse struct {
 }
 
 type handlers struct {
-	gh       githubAPI
+	source   dataSource
 	cache    *cache
 	sf       singleflight.Group
 	stateTTL time.Duration
 	logger   *slog.Logger
 }
 
-func newHandlers(gh githubAPI, stateTTL time.Duration, logger *slog.Logger) *handlers {
+func newHandlers(source dataSource, stateTTL time.Duration, logger *slog.Logger) *handlers {
 	return &handlers{
-		gh:       gh,
+		source:   source,
 		cache:    newCache(),
 		stateTTL: stateTTL,
 		logger:   logger,
@@ -93,12 +93,12 @@ func (h *handlers) fetchState(ctx context.Context, owner, repo, branch string) (
 	eg, gctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
-		commits, err = h.gh.ListCommits(gctx, owner, repo, branch)
+		commits, err = h.source.ListCommits(gctx, owner, repo, branch)
 		return err
 	})
 	eg.Go(func() error {
 		var err error
-		prs, err = h.gh.ListPullRequests(gctx, owner, repo)
+		prs, err = h.source.ListPullRequests(gctx, owner, repo)
 		return err
 	})
 	if err := eg.Wait(); err != nil {
@@ -107,7 +107,7 @@ func (h *handlers) fetchState(ctx context.Context, owner, repo, branch string) (
 
 	// Ojo: el contexto derivado de errgroup queda cancelado tras Wait,
 	// así que la fase de PRs usa el contexto original.
-	prCommits, err := h.gh.PullRequestCommits(ctx, owner, repo, prs)
+	prCommits, err := h.source.PullRequestCommits(ctx, owner, repo, prs)
 	if err != nil {
 		h.logger.Warn("mapeo de PRs incompleto", "owner", owner, "repo", repo, "err", err)
 	}
@@ -142,7 +142,7 @@ func (h *handlers) handleTree(w http.ResponseWriter, r *http.Request) {
 		if v, ok := h.cache.Get(key); ok {
 			return v, nil
 		}
-		tree, err := h.gh.GetTree(r.Context(), owner, repo, sha)
+		tree, err := h.source.GetTree(r.Context(), owner, repo, sha)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +172,7 @@ func (h *handlers) handleCommitFiles(w http.ResponseWriter, r *http.Request) {
 		if v, ok := h.cache.Get(key); ok {
 			return v, nil
 		}
-		files, err := h.gh.GetCommitFiles(r.Context(), owner, repo, sha)
+		files, err := h.source.GetCommitFiles(r.Context(), owner, repo, sha)
 		if err != nil {
 			return nil, err
 		}
