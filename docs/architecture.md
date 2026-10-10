@@ -50,6 +50,8 @@ gitScape es una SPA sin backend: todo el trabajo ocurre en el navegador.
 
 Opcional pero recomendado. Ver [ADR 0006](adr/0006-backend-go.md). En modo backend el coste de API desde el navegador baja a **1 petición agregada + 1 por cambio de commit** (y los árboles/ficheros repetidos los sirve la caché del servidor).
 
+La fuente de datos es intercambiable mediante la interfaz `dataSource`: `githubClient` (API) o `localSource` (clon local con `git`, flag `--repo-path`), que además puede usar GitHub solo para los PRs.
+
 | Fase | Llamadas desde el navegador (modo backend) |
 |---|---|
 | Carga inicial | 1 (`/state`, cacheada) |

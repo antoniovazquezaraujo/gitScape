@@ -54,12 +54,22 @@ Y en el `.env` del frontend:
 VITE_API_URL=/   # mismo origen: en dev, Vite redirige /api al backend (ver vite.config.ts)
 ```
 
+Para el **modo local** (fase 2), arranca el backend apuntando a un clon:
+
+```bash
+cd server
+GITHUB_TOKEN=tu_token go run . --repo-path ~/dev/mi-repo
+```
+
+> Los commits, árboles y ficheros se leen **del disco con `git`**: instantáneo, offline y sin gastar cuota. Si hay token y el clon tiene remoto de GitHub, los PRs se traen de la API una sola vez. El frontend no cambia: ajusta `VITE_GITHUB_BRANCH` a la rama local y abre la app.
+
 | Modo | Cuándo usarlo | Cómo |
 |---|---|---|
 | Directo | Repos pequeños, sin backend | Sin `VITE_API_URL` (Octokit en el navegador) |
-| **Backend Go** | Repos medianos/grandes, caché, token seguro | `go run .` + `VITE_API_URL=/api` |
+| **Backend Go** | Repos medianos/grandes, cualquier repo de GitHub, caché, token seguro | `go run .` + `VITE_API_URL=/` |
+| **Backend Go + clon local** ⭐ | Tus clones: instantáneo, offline, sin cuota | `go run . --repo-path ~/dev/mi-repo` |
 
-Medidas reales con un repo de 506 commits y 75 PRs: carga en frío ~16 s → **~6 s**; en caliente **~15 ms**. Detalles y fases en el [ADR 0006](docs/adr/0006-backend-go.md).
+Medidas reales: repos de 506 commits/75 PRs → frío ~6 s, caliente ~15 ms; en modo local, 1.807 commits leídos del disco al instante (solo los PRs van a la API, una vez). Detalles y fases en el [ADR 0006](docs/adr/0006-backend-go.md).
 
 ## 🕹️ Controles
 
@@ -86,7 +96,9 @@ src/
 
 server/                # Backend Go (opcional): proxy + caché + agregación
 ├── main.go            # Configuración, servidor HTTP y middlewares
-├── github.go          # Cliente GitHub (paginación + concurrencia)
+├── source.go          # Interfaz dataSource (GitHub o clon local)
+├── github.go          # Fuente GitHub (paginación + concurrencia)
+├── gitlocal.go        # Fuente local (git) + PRs opcionales de GitHub
 ├── handlers.go        # Endpoints de la API
 └── cache.go           # Caché en memoria con TTL
 ```
@@ -104,8 +116,9 @@ server/                # Backend Go (opcional): proxy + caché + agregación
 ## 🗺️ Roadmap
 
 - [x] **Backend Go (fase 0)**: proxy + caché + agregación; token fuera del navegador (ver [`docs/adr/0006`](docs/adr/0006-backend-go.md)).
+- [x] **Modo local (fase 2)**: `--repo-path` lee del clon con git; instantáneo, offline y sin cuota (cubre [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md)).
 - [ ] Backend fase 1: caché en disco y prefetch de la reproducción.
-- [ ] Backend fase 2: modo local (`--repo-path`) leyendo del clon con git (cubre [`docs/adr/0004`](docs/adr/0004-fuente-de-datos-local.md)).
+- [ ] Backend fase 3: streaming (SSE) y despliegue público.
 - [ ] Reducir el tamaño del chunk (code-splitting de Three.js).
 
 ## 📚 Documentación
