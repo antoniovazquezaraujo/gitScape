@@ -31,6 +31,8 @@ interface ProgrammerEntry {
   group: THREE.Group<THREE.Object3DEventMap>;
 }
 
+type FileFamily = 'code' | 'grammar' | 'docs' | 'config' | 'assets' | 'other';
+
 export default class ViewImpl implements View {
 
   private readonly folderColor = 0xAA5555;
@@ -762,7 +764,9 @@ export default class ViewImpl implements View {
     myGroup.userData.elementName = path;
     myGroup.userData.elementType = 'file';
     myGroup.userData.path = path;
-    const fileBox = this.fileBox(name, size);
+    // Etiqueta sin la última extensión; el nombre completo sigue mandando en
+    // rutas/claves y es el que decide la familia del badge.
+    const fileBox = this.fileBox(ViewImpl.stripExtension(name), size, name);
     this.elements[path] = fileBox;
     fileBox.addEventListener('click', (event: any) => {
       console.log(path);
@@ -812,11 +816,11 @@ export default class ViewImpl implements View {
     return box;
 
   }
-  public fileBox(name: string, size?: number) {
-    return this.newBox("file", this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth, size);
+  public fileBox(name: string, size?: number, fullName: string = name) {
+    return this.newBox("file", this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth, size, fullName);
   }
 
-  public newBox(type: string, theColor: any, name: string = "unnamed", width: number, height: number, depth: number, size?: number) {
+  public newBox(type: string, theColor: any, name: string = "unnamed", width: number, height: number, depth: number, size?: number, fullName: string = name) {
 
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const material = new THREE.MeshLambertMaterial({ color: theColor });
@@ -829,14 +833,15 @@ export default class ViewImpl implements View {
     boxName.color = this.getComplementaryColor(theColor);
     boxName.anchorX = 'center';
     if (isFile) {
-      // Nombre con wrap dentro del panel. Se ancla por abajo para que al
-      // envolver crezca hacia ARRIBA (su borde superior queda en ≈+0.035 con
-      // una línea) y no invada la línea de tamaño de abajo.
-      boxName.maxWidth = width * 0.85;
+      // Nombre con wrap, centrado en el hueco a la derecha del badge y anclado
+      // al medio: al envolver crece arriba/abajo sin pisar el badge (izquierda)
+      // ni la línea de tamaño (abajo).
+      boxName.maxWidth = width * 0.85 - 0.08;
       boxName.textAlign = 'center';
       boxName.overflowWrap = 'break-word';
-      boxName.anchorY = 'bottom';
-      boxName.position.set(0, -0.07, (depth / 2) + 0.03);
+      boxName.anchorY = 'middle';
+      boxName.lineHeight = 1.15;
+      boxName.position.set(0.04, 0.035, (depth / 2) + 0.03);
     } else {
       boxName.position.set(0, 0, (depth / 2) + 0.03);
     }
@@ -844,6 +849,12 @@ export default class ViewImpl implements View {
     const boxGroup: any = new THREE.Group();
     boxGroup.add(boxMesh);
     boxGroup.add(boxName);
+    if (isFile) {
+      // Badge de tipo a la izquierda del nombre: forma + color por familia.
+      const badge = this.createFileBadge(this.getFileFamily(fullName));
+      badge.position.set(-width / 2 + 0.08, 0.035, (depth / 2) + 0.035);
+      boxGroup.add(badge);
+    }
     if (isFile && size !== undefined) {
       // Tamaño actual del fichero, debajo del nombre y en el mismo color.
       const sizeLabel = new Text();
@@ -856,7 +867,7 @@ export default class ViewImpl implements View {
       boxGroup.add(sizeLabel);
     }
     boxGroup.userData.elementType = type;
-    boxGroup.userData.elementName = name;
+    boxGroup.userData.elementName = fullName;
     boxGroup.userData.box = boxMesh;
     boxGroup.userData.text = boxName;
     return boxGroup;
@@ -877,6 +888,103 @@ export default class ViewImpl implements View {
     }
     const decimals = value < 100 ? 1 : 0;
     return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+  }
+
+  // Última extensión de forma segura: ".gitignore" (punto inicial) y "nombre."
+  // (punto final) no cuentan como extensión.
+  private static getExtension(name: string): string {
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot === name.length - 1) {
+      return '';
+    }
+    return name.slice(dot + 1).toLowerCase();
+  }
+
+  private static stripExtension(name: string): string {
+    const ext = ViewImpl.getExtension(name);
+    return ext ? name.slice(0, name.length - ext.length - 1) : name;
+  }
+
+  // Familias de tipo para el badge, por extensión del nombre ORIGINAL.
+  private readonly codeExtensions = new Set([
+    'java', 'kt', 'kts', 'ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'c', 'h',
+    'cpp', 'hpp', 'cs', 'rb', 'php', 'swift', 'scala', 'm', 'mm', 'sh', 'bash', 'zsh', 'sql'
+  ]);
+  private readonly grammarExtensions = new Set(['g4', 'g', 'grammar', 'bnf', 'ebnf', 'lex', 'y', 'l', 'peg']);
+  private readonly docExtensions = new Set(['md', 'markdown', 'txt', 'rst', 'adoc']);
+  private readonly configExtensions = new Set([
+    'json', 'yaml', 'yml', 'xml', 'toml', 'ini', 'properties', 'gradle', 'cfg', 'conf', 'env', 'editorconfig', 'lock', 'plist'
+  ]);
+  private readonly assetExtensions = new Set([
+    'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'obj', 'fbx', 'gltf', 'glb',
+    'mp3', 'wav', 'ogg', 'ttf', 'woff', 'woff2', 'mp4'
+  ]);
+
+  private getFileFamily(name: string): FileFamily {
+    const ext = ViewImpl.getExtension(name);
+    if (this.codeExtensions.has(ext)) {
+      return 'code';
+    }
+    if (this.grammarExtensions.has(ext)) {
+      return 'grammar';
+    }
+    if (this.docExtensions.has(ext)) {
+      return 'docs';
+    }
+    if (this.configExtensions.has(ext)) {
+      return 'config';
+    }
+    if (this.assetExtensions.has(ext)) {
+      return 'assets';
+    }
+    return 'other';
+  }
+
+  // Badge plano mirando a +Z. Forma Y color por familia, para no depender solo
+  // del color (accesibilidad): código=círculo, grammar=triángulo, docs=cuadrado,
+  // config=rombo, assets=hexágono, otros=pentágono.
+  private createFileBadge(family: FileFamily): THREE.Mesh {
+    const radius = 0.035;
+    let geometry: THREE.BufferGeometry = new THREE.CircleGeometry(radius, 5);
+    let color = 0x9aa6b8;
+    let rotationZ = 0;
+    switch (family) {
+      case 'code':
+        geometry = new THREE.CircleGeometry(radius, 16);
+        color = 0x5ac8fa;
+        break;
+      case 'grammar':
+        geometry = ViewImpl.createTriangleGeometry(radius);
+        color = 0xffab40;
+        break;
+      case 'docs':
+        geometry = new THREE.PlaneGeometry(radius * 1.8, radius * 1.8);
+        color = 0xb5e853;
+        break;
+      case 'config':
+        geometry = new THREE.PlaneGeometry(radius * 1.8, radius * 1.8);
+        color = 0xc792ea;
+        rotationZ = Math.PI / 4;
+        break;
+      case 'assets':
+        geometry = new THREE.CircleGeometry(radius, 6);
+        color = 0xff6e9c;
+        break;
+      default:
+        break;
+    }
+    const badge = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color }));
+    badge.rotation.z = rotationZ;
+    return badge;
+  }
+
+  private static createTriangleGeometry(radius: number): THREE.ShapeGeometry {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, radius);
+    shape.lineTo(radius * 0.866, -radius * 0.5);
+    shape.lineTo(-radius * 0.866, -radius * 0.5);
+    shape.closePath();
+    return new THREE.ShapeGeometry(shape);
   }
   public getComplementaryColor(hexColor: any) {
     let decimalColor = parseInt(hexColor, 16);
