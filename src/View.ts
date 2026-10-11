@@ -100,9 +100,8 @@ export default class ViewImpl implements View {
   private readonly followAlignTimeout = 3;
   private readonly followLookAhead = 0.4;
   private readonly followLookAheadHeight = 0.15;
-  // Mirada del astronauta en coordenadas de mundo (unitaria) y quaternion auxiliar.
+  // Mirada del astronauta en coordenadas de mundo (unitaria).
   private readonly followFacing = new THREE.Vector3(0, 0, -1);
-  private readonly followQuaternion = new THREE.Quaternion();
   private readonly followTargetPosition = new THREE.Vector3();
   private readonly followDesiredPosition = new THREE.Vector3();
   private readonly followLookTarget = new THREE.Vector3();
@@ -117,11 +116,16 @@ export default class ViewImpl implements View {
   private readonly rayColorAdded = 0x00ff55;
   private readonly rayColorRemoved = 0xff2222;
   private readonly rayRadius = 0.04;
-  private readonly rayLife = 0.16;
-  private readonly rayStaggerMs = 100;
+  private readonly rayLife = 0.23;
+  private readonly rayRepeatDelayMs = 180;
   private readonly rayOriginOffset = 0.2;
+  // Separación lateral de los cañones respecto al centro del astronauta.
+  private readonly cannonSeparation = 0.4;
   private readonly rayFadeOpacity = 0.95;
   private readonly rayUp = new THREE.Vector3(0, 1, 0);
+  private readonly rayQuaternion = new THREE.Quaternion();
+  private readonly rayFacing = new THREE.Vector3(0, 0, -1);
+  private readonly rayLateral = new THREE.Vector3(1, 0, 0);
   private readonly activeRays: {
     mesh: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
     elapsed: number;
@@ -477,25 +481,28 @@ export default class ViewImpl implements View {
     }
   }
 
+  // Mirada del astronauta: su "forward" local (0,0,-1) llevado al mundo. El
+  // modelo no rota con el movimiento; la orientación va horneada en el clon
+  // (rotateX(-π/2) + rotateZ(π) en createAstronaut). Verificado sobre el OBJ: el
+  // modelo es Z-up y mira a −Y nativo (visores y manos detalladas a −Y; la mochila
+  // al +Y). Esas rotaciones convierten −Y nativo en −Z mundial, es decir, mira a
+  // los ficheros (plano Z≈0) desde las órbitas Z≈1/2. Si el grupo llegara a rotar
+  // y la mirada apuntase en contra del árbol, la invertimos para no colocar la
+  // cámara delante de su cara.
+  private computeFacing(group: THREE.Group<THREE.Object3DEventMap>, target: THREE.Vector3): void {
+    group.getWorldQuaternion(this.rayQuaternion);
+    target.set(0, 0, -1).applyQuaternion(this.rayQuaternion);
+    if (target.z > 0) {
+      target.negate();
+    }
+  }
+
   private updateFollow(delta: number): void {
     if (!this.followEnabled || !this.followTarget) {
       return;
     }
     this.followTarget.group.getWorldPosition(this.followTargetPosition);
-    this.followTarget.group.getWorldQuaternion(this.followQuaternion);
-
-    // La mirada del astronauta es su "forward" local (0,0,-1) llevado al mundo.
-    // El modelo no rota con el movimiento: la orientación va horneada en el clon
-    // (rotateX(-π/2) + rotateZ(π) en createAstronaut). Verificado sobre el OBJ:
-    // el modelo es Z-up y mira a −Y nativo (visores y manos detalladas a −Y; la
-    // mochila al +Y). Esas rotaciones convierten −Y nativo en −Z mundial, es
-    // decir, mira a los ficheros (plano Z≈0) desde las órbitas Z≈1/2. Si el grupo
-    // llegara a rotar y la mirada apuntase en contra del árbol, la invertimos
-    // para no colocar la cámara delante de su cara.
-    this.followFacing.set(0, 0, -1).applyQuaternion(this.followQuaternion);
-    if (this.followFacing.z > 0) {
-      this.followFacing.negate();
-    }
+    this.computeFacing(this.followTarget.group, this.followFacing);
 
     if (this.followAligning) {
       // Vuelo inicial (solo al entrar): detrás de su espalda y por encima,
@@ -999,27 +1006,49 @@ export default class ViewImpl implements View {
     return colors;
   }
 
-  // Ráfaga: un rayo por color en sucesión rápida. Resuelve cuando muere el último.
+  // Descarga simultánea: dispara a la vez desde cada cañón cuyo color aplique y
+  // repite un segundo disparo ~180 ms después. Resuelve cuando muere el último rayo.
   private launchRayVolley(programmer: string, targetPosition: THREE.Vector3, colors: number[]): Promise<void> {
     return new Promise((resolve) => {
-      colors.forEach((color, index) => {
-        window.setTimeout(() => {
+      const fire = () => {
+        for (const color of colors) {
           this.spawnRay(programmer, targetPosition, color);
-          if (index === colors.length - 1) {
-            window.setTimeout(resolve, this.rayLife * 1000);
-          }
-        }, index * this.rayStaggerMs);
-      });
+        }
+      };
+      fire();
+      window.setTimeout(() => {
+        fire();
+        window.setTimeout(resolve, this.rayLife * 1000);
+      }, this.rayRepeatDelayMs);
     });
   }
 
   // Rayo de verdad: cilindro fino orientado con cuaternión, no una línea de 1 px.
+  // Nace de un cañón virtual anclado al astronauta: verde a su IZQUIERDA, amarillo
+  // al CENTRO y rojo a su DERECHA. La izquierda se deriva de su mirada:
+  // lateral = normalize(cross(up, facing)) (vista desde atrás, el encuadre por defecto).
   private spawnRay(programmer: string, targetPosition: THREE.Vector3, color: number): void {
-    const origin = this.programmers[programmer].group.position;
+    const group = this.programmers[programmer].group;
+    const origin = group.position;
+    this.computeFacing(group, this.rayFacing);
+    this.rayLateral.crossVectors(this.rayUp, this.rayFacing);
+    if (this.rayLateral.lengthSq() < 1e-6) {
+      this.rayLateral.set(1, 0, 0);
+    } else {
+      this.rayLateral.normalize();
+    }
+    let cannonOffset = 0;
+    if (color === this.rayColorAdded) {
+      cannonOffset = this.cannonSeparation;
+    } else if (color === this.rayColorRemoved) {
+      cannonOffset = -this.cannonSeparation;
+    }
+    const fromX = origin.x + this.rayLateral.x * cannonOffset;
     const fromY = origin.y + this.rayOriginOffset;
-    const dx = targetPosition.x - origin.x;
+    const fromZ = origin.z + this.rayLateral.z * cannonOffset;
+    const dx = targetPosition.x - fromX;
     const dy = targetPosition.y - fromY;
-    const dz = targetPosition.z - origin.z;
+    const dz = targetPosition.z - fromZ;
     const length = Math.hypot(dx, dy, dz);
     if (length < 1e-4) {
       return;
@@ -1034,9 +1063,9 @@ export default class ViewImpl implements View {
     });
     const beam = new THREE.Mesh(geometry, material);
     beam.position.set(
-      origin.x + direction.x * length / 2,
+      fromX + direction.x * length / 2,
       fromY + direction.y * length / 2,
-      origin.z + direction.z * length / 2
+      fromZ + direction.z * length / 2
     );
     beam.quaternion.setFromUnitVectors(this.rayUp, direction);
     this.scene.add(beam);
