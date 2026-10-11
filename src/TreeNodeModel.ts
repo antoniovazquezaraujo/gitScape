@@ -10,6 +10,7 @@ export interface TreeNode {
     children: { [key: string]: TreeNodeImpl; };
     isFile: boolean;
     visible: boolean;
+    size?: number;
 
     find(path: string): TreeNode | null;
     findFirstVisibleParent(path: string): TreeNode;
@@ -27,6 +28,7 @@ export class TreeNodeImpl implements TreeNode {
     children: { [key: string]: TreeNodeImpl; };
     isFile: boolean;
     visible: boolean;
+    size?: number;
 
     constructor(name: string, isFile: boolean = false, parent: TreeNodeImpl | null = null, children: { [key: string]: TreeNodeImpl; } = {}) {
         this.name = name;
