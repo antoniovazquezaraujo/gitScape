@@ -163,6 +163,7 @@ export class ModelImpl implements Model {
         currentNode = currentNode.children[part];
         if (index === pathParts.length - 1 && item.type === 'blob') {
           currentNode.isFile = true;
+          currentNode.size = typeof item.size === 'number' ? item.size : undefined;
         }
       });
     });

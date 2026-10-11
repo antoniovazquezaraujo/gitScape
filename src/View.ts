@@ -748,7 +748,7 @@ export default class ViewImpl implements View {
       if ((child as TreeNode).isFile) {
         const fileGroup = new THREE.Group();
         this.moveFileDistance(fileGroup.position, index);
-        this.paintFile((child as TreeNode).name, fileGroup, (child as TreeNode).getPath());
+        this.paintFile((child as TreeNode).name, fileGroup, (child as TreeNode).getPath(), (child as TreeNode).size);
         filesGroup.add(fileGroup);
         index++;
       }
@@ -757,12 +757,12 @@ export default class ViewImpl implements View {
   }
 
 
-  public paintFile(name: string, group: THREE.Group, path: string) {
+  public paintFile(name: string, group: THREE.Group, path: string, size?: number) {
     const myGroup = new THREE.Group();
     myGroup.userData.elementName = path;
     myGroup.userData.elementType = 'file';
     myGroup.userData.path = path;
-    const fileBox = this.fileBox(name);
+    const fileBox = this.fileBox(name, size);
     this.elements[path] = fileBox;
     fileBox.addEventListener('click', (event: any) => {
       console.log(path);
@@ -812,31 +812,71 @@ export default class ViewImpl implements View {
     return box;
 
   }
-  public fileBox(name: string) {
-    return this.newBox("file", this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth);
+  public fileBox(name: string, size?: number) {
+    return this.newBox("file", this.fileColor, name, this.fileWidth, this.fileHeight, this.filePanelDepth, size);
   }
 
-  public newBox(type: string, theColor: any, name: string = "unnamed", width: number, height: number, depth: number) {
+  public newBox(type: string, theColor: any, name: string = "unnamed", width: number, height: number, depth: number, size?: number) {
 
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const material = new THREE.MeshLambertMaterial({ color: theColor });
     const boxMesh = new THREE.Mesh(geometry, material)
 
+    const isFile = type === 'file';
     const boxName = new Text();
     boxName.text = name;
-    boxName.fontSize = 0.1;
+    boxName.fontSize = isFile ? 0.085 : 0.1;
     boxName.color = this.getComplementaryColor(theColor);
     boxName.anchorX = 'center';
-    boxName.position.set(0, 0, (depth / 2) + 0.03);
+    if (isFile) {
+      // Nombre con wrap dentro del panel. Se ancla por abajo para que al
+      // envolver crezca hacia ARRIBA (su borde superior queda en ≈+0.035 con
+      // una línea) y no invada la línea de tamaño de abajo.
+      boxName.maxWidth = width * 0.85;
+      boxName.textAlign = 'center';
+      boxName.overflowWrap = 'break-word';
+      boxName.anchorY = 'bottom';
+      boxName.position.set(0, -0.07, (depth / 2) + 0.03);
+    } else {
+      boxName.position.set(0, 0, (depth / 2) + 0.03);
+    }
     boxName.sync();
     const boxGroup: any = new THREE.Group();
     boxGroup.add(boxMesh);
     boxGroup.add(boxName);
+    if (isFile && size !== undefined) {
+      // Tamaño actual del fichero, debajo del nombre y en el mismo color.
+      const sizeLabel = new Text();
+      sizeLabel.text = this.formatBytes(size);
+      sizeLabel.fontSize = 0.06;
+      sizeLabel.color = boxName.color;
+      sizeLabel.anchorX = 'center';
+      sizeLabel.position.set(0, -0.075, (depth / 2) + 0.03);
+      sizeLabel.sync();
+      boxGroup.add(sizeLabel);
+    }
     boxGroup.userData.elementType = type;
     boxGroup.userData.elementName = name;
     boxGroup.userData.box = boxMesh;
     boxGroup.userData.text = boxName;
     return boxGroup;
+  }
+
+  // Tamaño humano: "892 B", "12.4 KB", "1.8 MB". 1 decimal por debajo de 100
+  // (así 12.4 KB conserva su decimal); 0 a partir de ahí.
+  private formatBytes(bytes: number): string {
+    if (bytes < 1024) {
+      return `${Math.round(bytes)} B`;
+    }
+    const units = ['KB', 'MB', 'GB'];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    const decimals = value < 100 ? 1 : 0;
+    return `${value.toFixed(decimals)} ${units[unitIndex]}`;
   }
   public getComplementaryColor(hexColor: any) {
     let decimalColor = parseInt(hexColor, 16);
