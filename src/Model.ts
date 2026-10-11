@@ -9,7 +9,7 @@ export interface Model {
   notifyObservers(eventType: EventType): void;
   reload(): void;
   getNode(): TreeNodeImpl;
-  addElement(path: string, isFile: boolean): void;
+  addElement(path: string, isFile: boolean, size?: number): void;
   addTreeNode(commitSha: string, file: any): void;
   removeElement(path: string): void;
   setCommitIndex(index: number): void;
@@ -109,15 +109,15 @@ export class ModelImpl implements Model {
     const treeNode = this.createTreeNodeFromCommit(data);
     const found = treeNode.find(file.filename);
     if (found) {
-      if (found.isFile) {
-        this.addElement(file.filename, true);
-      } else {
-        this.addElement(file.filename, false);
-      }
+      // El árbol ya descargado trae el tamaño del fichero: lo conservamos para
+      // que la etiqueta lo muestre también en ficheros añadidos en vivo.
+      const item = (data?.tree ?? []).find((entry: any) => entry.path === file.filename);
+      const size = typeof item?.size === 'number' ? item.size : undefined;
+      this.addElement(file.filename, found.isFile, size);
     }
   }
 
-  public addElement(path: string, isFile: boolean): void {
+  public addElement(path: string, isFile: boolean, size?: number): void {
     const pathComponents = path.split('/');
     let currentRootNode = this.treeNode!;
 
@@ -133,6 +133,9 @@ export class ModelImpl implements Model {
 
     const newNodeName = pathComponents[pathComponents.length - 1];
     const newNode = new TreeNodeImpl(newNodeName, isFile, currentRootNode, {});
+    if (typeof size === 'number') {
+      newNode.size = size;
+    }
     if (!currentRootNode.children[newNodeName]) {
       currentRootNode.addTreeNode(newNode);
       this.notifyObservers(EventType.TreeNodeChange);
