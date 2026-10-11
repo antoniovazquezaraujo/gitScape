@@ -9,6 +9,9 @@ const API_URL: string | undefined = apiUrlRaw === undefined ? undefined : apiUrl
 
 interface RepositoryState {
     commits: any[];
+}
+
+interface RepositoryPulls {
     pullRequests: any[];
     commitToPullRequest: Record<string, number>;
 }
@@ -58,12 +61,23 @@ export class GitModelImpl implements GitModel {
         if (API_URL !== undefined) {
             const state = await this.fetchRepositoryState();
             this.allCommits = state.commits;
-            this.applyPullRequests(state.pullRequests, state.commitToPullRequest);
+            this.setCommitIndex(0);
+            // Los PRs se cargan en segundo plano: no deben bloquear el primer pintado.
+            void this.loadPullRequestsInBackground();
         } else {
             await this.reloadAllRepositoryCommits();
             await this.initializePullRequests();
+            this.setCommitIndex(0);
         }
-        this.setCommitIndex(0);
+    }
+
+    private async loadPullRequestsInBackground(): Promise<void> {
+        try {
+            const pulls = await this.fetchApi<RepositoryPulls>('/pulls');
+            this.applyPullRequests(pulls.pullRequests, pulls.commitToPullRequest);
+        } catch (error) {
+            console.error('No se pudieron cargar los pull requests:', error);
+        }
     }
     async initializePullRequests() {
         try {

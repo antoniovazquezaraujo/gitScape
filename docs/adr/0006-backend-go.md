@@ -14,7 +14,8 @@ Introducir un backend en Go (`server/`) que:
 
 - Expone una API REST agregada, compatible con lo que espera el frontend:
   - `GET /api/health`
-  - `GET /api/repos/{owner}/{repo}/state?branch=` → commits (orden cronológico) + PRs + mapeo commit → PR
+  - `GET /api/repos/{owner}/{repo}/state?branch=` → commits (orden cronológico; **sin PRs**, para responder al instante en modo local)
+  - `GET /api/repos/{owner}/{repo}/pulls` → PRs + mapeo commit → PR (el frontend lo pide en segundo plano, sin bloquear el pintado)
   - `GET /api/repos/{owner}/{repo}/tree/{sha}`
   - `GET /api/repos/{owner}/{repo}/commits/{sha}/files`
 - Consulta GitHub con `go-github`, paginando de 100 en 100.

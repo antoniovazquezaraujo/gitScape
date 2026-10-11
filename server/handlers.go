@@ -9,19 +9,24 @@ import (
 	"time"
 
 	"github.com/google/go-github/v92/github"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
-// stateResponse es la respuesta agregada que consume el frontend:
-// todos los commits de la rama, todos los PRs y el mapeo commit -> PR.
+// stateResponse devuelve los commits de la rama (rápido: en modo local sale del
+// disco). Los PRs van aparte en pullsResponse para no bloquear el primer pintado.
 type stateResponse struct {
-	Owner               string                     `json:"owner"`
-	Repo                string                     `json:"repo"`
-	Branch              string                     `json:"branch"`
-	Commits             []*github.RepositoryCommit `json:"commits"`
-	PullRequests        []*github.PullRequest      `json:"pullRequests"`
-	CommitToPullRequest map[string]int             `json:"commitToPullRequest"`
+	Owner   string                     `json:"owner"`
+	Repo    string                     `json:"repo"`
+	Branch  string                     `json:"branch"`
+	Commits []*github.RepositoryCommit `json:"commits"`
+}
+
+// pullsResponse es la respuesta de los pull requests y su mapeo commit -> PR.
+type pullsResponse struct {
+	Owner               string                `json:"owner"`
+	Repo                string                `json:"repo"`
+	PullRequests        []*github.PullRequest `json:"pullRequests"`
+	CommitToPullRequest map[string]int        `json:"commitToPullRequest"`
 }
 
 type handlers struct {
@@ -44,6 +49,7 @@ func newHandlers(source dataSource, stateTTL time.Duration, logger *slog.Logger)
 func (h *handlers) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/repos/{owner}/{repo}/state", h.handleState)
+	mux.HandleFunc("GET /api/repos/{owner}/{repo}/pulls", h.handlePulls)
 	mux.HandleFunc("GET /api/repos/{owner}/{repo}/tree/{sha}", h.handleTree)
 	mux.HandleFunc("GET /api/repos/{owner}/{repo}/commits/{sha}/files", h.handleCommitFiles)
 }
@@ -83,30 +89,57 @@ func (h *handlers) handleState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-// fetchState obtiene commits y PRs en paralelo y construye el mapeo commit -> PR.
+// fetchState obtiene los commits de la rama. Los PRs NO se tocan aquí: van por
+// /pulls para que el modo local responda al instante.
 func (h *handlers) fetchState(ctx context.Context, owner, repo, branch string) (*stateResponse, error) {
-	var (
-		commits []*github.RepositoryCommit
-		prs     []*github.PullRequest
-	)
-
-	eg, gctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		var err error
-		commits, err = h.source.ListCommits(gctx, owner, repo, branch)
-		return err
-	})
-	eg.Go(func() error {
-		var err error
-		prs, err = h.source.ListPullRequests(gctx, owner, repo)
-		return err
-	})
-	if err := eg.Wait(); err != nil {
+	commits, err := h.source.ListCommits(ctx, owner, repo, branch)
+	if err != nil {
 		return nil, err
 	}
+	return &stateResponse{
+		Owner:   owner,
+		Repo:    repo,
+		Branch:  branch,
+		Commits: commits,
+	}, nil
+}
 
-	// Ojo: el contexto derivado de errgroup queda cancelado tras Wait,
-	// así que la fase de PRs usa el contexto original.
+func (h *handlers) handlePulls(w http.ResponseWriter, r *http.Request) {
+	owner := r.PathValue("owner")
+	repo := r.PathValue("repo")
+	key := "pulls:" + owner + "/" + repo
+
+	if v, ok := h.cache.Get(key); ok {
+		writeJSON(w, http.StatusOK, v)
+		return
+	}
+
+	v, err, _ := h.sf.Do(key, func() (any, error) {
+		// Doble comprobación: otra petición pudo rellenar la caché mientras esperábamos.
+		if v, ok := h.cache.Get(key); ok {
+			return v, nil
+		}
+		pulls, err := h.fetchPulls(r.Context(), owner, repo)
+		if err != nil {
+			return nil, err
+		}
+		h.cache.Set(key, pulls, h.stateTTL)
+		return pulls, nil
+	})
+	if err != nil {
+		h.logger.Error("cargando pull requests", "owner", owner, "repo", repo, "err", err)
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// fetchPulls obtiene todos los PRs y construye el mapeo commit -> PR.
+func (h *handlers) fetchPulls(ctx context.Context, owner, repo string) (*pullsResponse, error) {
+	prs, err := h.source.ListPullRequests(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
 	prCommits, err := h.source.PullRequestCommits(ctx, owner, repo, prs)
 	if err != nil {
 		h.logger.Warn("mapeo de PRs incompleto", "owner", owner, "repo", repo, "err", err)
@@ -117,12 +150,9 @@ func (h *handlers) fetchState(ctx context.Context, owner, repo, branch string) (
 			mapping[sha] = number
 		}
 	}
-
-	return &stateResponse{
+	return &pullsResponse{
 		Owner:               owner,
 		Repo:                repo,
-		Branch:              branch,
-		Commits:             commits,
 		PullRequests:        prs,
 		CommitToPullRequest: mapping,
 	}, nil

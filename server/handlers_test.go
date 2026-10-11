@@ -136,21 +136,38 @@ func TestStateAndCache(t *testing.T) {
 	if len(state.Commits) != 2 {
 		t.Fatalf("se esperaban 2 commits, hay %d", len(state.Commits))
 	}
-	if len(state.PullRequests) != 1 {
-		t.Fatalf("se esperaba 1 PR, hay %d", len(state.PullRequests))
-	}
-	if got := state.CommitToPullRequest["bbb222"]; got != 7 {
-		t.Fatalf("mapeo del commit bbb222 = %d, se esperaba 7", got)
-	}
 	if state.Branch != "main" {
 		t.Fatalf("branch = %q, se esperaba main", state.Branch)
 	}
+	// El estado ya no consulta PRs: eso vive en /pulls y no debe bloquear.
+	if f.prsCalls != 0 || f.prCommCalls != 0 {
+		t.Fatalf("el estado no debe consultar PRs (prs=%d, prCommits=%d)", f.prsCalls, f.prCommCalls)
+	}
 
-	// Segunda llamada: debe servirse de caché sin volver a consultar GitHub.
+	// Segunda llamada: debe servirse de caché sin volver a consultar la fuente.
 	getJSON(t, url, &state)
 	if f.commitsCalls != 1 {
 		t.Fatalf("ListCommits llamado %d veces, se esperaba 1 (caché)", f.commitsCalls)
 	}
+}
+
+func TestPullsAndCache(t *testing.T) {
+	f := &fakeGitHub{}
+	srv := newTestServer(f)
+	defer srv.Close()
+
+	url := srv.URL + "/api/repos/owner/repo/pulls"
+
+	var pulls pullsResponse
+	getJSON(t, url, &pulls)
+	if len(pulls.PullRequests) != 1 {
+		t.Fatalf("se esperaba 1 PR, hay %d", len(pulls.PullRequests))
+	}
+	if got := pulls.CommitToPullRequest["bbb222"]; got != 7 {
+		t.Fatalf("mapeo del commit bbb222 = %d, se esperaba 7", got)
+	}
+
+	getJSON(t, url, &pulls)
 	if f.prsCalls != 1 {
 		t.Fatalf("ListPullRequests llamado %d veces, se esperaba 1 (caché)", f.prsCalls)
 	}
