@@ -829,7 +829,7 @@ export default class ViewImpl implements View {
     const isFile = type === 'file';
     const boxName = new Text();
     boxName.text = name;
-    boxName.fontSize = isFile ? 0.085 : 0.1;
+    boxName.fontSize = isFile ? 0.0425 : 0.1;
     boxName.color = this.getComplementaryColor(theColor);
     boxName.anchorX = 'center';
     if (isFile) {
@@ -841,7 +841,7 @@ export default class ViewImpl implements View {
       boxName.overflowWrap = 'break-word';
       boxName.anchorY = 'middle';
       boxName.lineHeight = 1.15;
-      boxName.position.set(0.04, 0.035, (depth / 2) + 0.03);
+      boxName.position.set(0.04, 0.025, (depth / 2) + 0.03);
     } else {
       boxName.position.set(0, 0, (depth / 2) + 0.03);
     }
@@ -852,17 +852,17 @@ export default class ViewImpl implements View {
     if (isFile) {
       // Badge de tipo a la izquierda del nombre: forma + color por familia.
       const badge = this.createFileBadge(this.getFileFamily(fullName));
-      badge.position.set(-width / 2 + 0.08, 0.035, (depth / 2) + 0.035);
+      badge.position.set(-width / 2 + 0.095, 0.025, (depth / 2) + 0.035);
       boxGroup.add(badge);
     }
     if (isFile && size !== undefined) {
       // Tamaño actual del fichero, debajo del nombre y en el mismo color.
       const sizeLabel = new Text();
       sizeLabel.text = this.formatBytes(size);
-      sizeLabel.fontSize = 0.06;
+      sizeLabel.fontSize = 0.03;
       sizeLabel.color = boxName.color;
       sizeLabel.anchorX = 'center';
-      sizeLabel.position.set(0, -0.075, (depth / 2) + 0.03);
+      sizeLabel.position.set(0, -0.04, (depth / 2) + 0.03);
       sizeLabel.sync();
       boxGroup.add(sizeLabel);
     }
@@ -944,7 +944,9 @@ export default class ViewImpl implements View {
   // del color (accesibilidad): código=círculo, grammar=triángulo, docs=cuadrado,
   // config=rombo, assets=hexágono, otros=pentágono.
   private createFileBadge(family: FileFamily): THREE.Mesh {
-    const radius = 0.035;
+    // Diámetro ~0.048: algo menos de la mitad que antes, para que las formas
+    // sigan distinguiéndose junto al nombre reducido.
+    const radius = 0.024;
     let geometry: THREE.BufferGeometry = new THREE.CircleGeometry(radius, 5);
     let color = 0x9aa6b8;
     let rotationZ = 0;
