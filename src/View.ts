@@ -859,7 +859,7 @@ export default class ViewImpl implements View {
       // Tamaño actual del fichero, debajo del nombre y en el mismo color.
       const sizeLabel = new Text();
       sizeLabel.text = this.formatBytes(size);
-      sizeLabel.fontSize = 0.03;
+      sizeLabel.fontSize = 0.04;
       sizeLabel.color = boxName.color;
       sizeLabel.anchorX = 'center';
       sizeLabel.position.set(0, -0.075, (depth / 2) + 0.03);
