@@ -40,7 +40,7 @@ gitScape es una SPA sin backend: todo el trabajo ocurre en el navegador.
 1. `main.ts` instancia y cablea los tres componentes.
 2. `ControllerImpl.initialize()` → `GitModelImpl.initialize()`:
    - **modo directo**: descarga todos los commits de la rama (`VITE_GITHUB_BRANCH`), luego los PRs y sus commits (mapeo commit → PR);
-   - **modo backend** (`VITE_API_URL`): pide el estado agregado a `GET /api/repos/{owner}/{repo}/state` (el backend hace ambas cosas en paralelo y con caché);
+   - **modo backend** (`VITE_API_URL`): pide los commits a `GET /api/repos/{owner}/{repo}/state` (instantáneo: en modo local sale del disco) y lanza **en segundo plano** `GET /api/repos/{owner}/{repo}/pulls` para los PRs y su mapeo, que no bloquea el primer pintado;
    - establece el primer commit como actual.
 3. `ViewImpl` pinta el árbol del commit actual.
 4. Slider o botones → `commitIndexChanged()` → recarga el árbol de ese commit (`GitModel.getTreeAtCommit`).
@@ -54,9 +54,11 @@ La fuente de datos es intercambiable mediante la interfaz `dataSource`: `githubC
 
 | Fase | Llamadas desde el navegador (modo backend) |
 |---|---|
-| Carga inicial | 1 (`/state`, cacheada) |
+| Carga inicial | 1 (`/state`) + 1 en segundo plano (`/pulls`, no bloquea) |
 | Cambio de commit | 1 (`/tree/{sha}`, inmutable) |
 | Reproducción | 1 por commit nuevo + ficheros cacheados |
+
+Medido con un clon local de 1.811 commits: `/state` en frío ≈ **60 ms**; `/pulls` en frío ≈ 27 s solo la primera vez (caché 30 min), luego ≈ 20 ms. El primer pintado no espera a GitHub.
 
 ## Coste de API (importante para repos grandes)
 
