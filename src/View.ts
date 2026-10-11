@@ -84,24 +84,32 @@ export default class ViewImpl implements View {
     timer: number;
   } | null = null;
   private programmers: { [programmer: string]: ProgrammerEntry } = {};
-  // Seguimiento del astronauta activo durante la reproducción: la cámara se
-  // coloca detrás de su MIRADA (su espalda), no detrás de su movimiento.
+  // Seguimiento del astronauta activo durante la reproducción: la cámara queda
+  // ANCLADA en traslación a él, pero con OrbitControls activos el usuario puede
+  // orbitar y hacer zoom a su alrededor (su offset relativo se conserva).
+  // Se sale con F o al pausar la reproducción.
   private followEnabled: boolean = false;
   private followTarget: ProgrammerEntry | null = null;
+  private followAligning: boolean = false;
+  private followAlignElapsed: number = 0;
   private readonly followDistance = 2.5;
   private readonly followHeight = 0.8;
   private readonly followLerpSpeed = 4;
+  private readonly followAnchorLerpSpeed = 6;
+  private readonly followAlignTolerance = 0.08;
+  private readonly followAlignTimeout = 3;
   private readonly followLookAhead = 0.4;
   private readonly followLookAheadHeight = 0.15;
-  private readonly followDragThreshold = 5;
   // Mirada del astronauta en coordenadas de mundo (unitaria) y quaternion auxiliar.
   private readonly followFacing = new THREE.Vector3(0, 0, -1);
   private readonly followQuaternion = new THREE.Quaternion();
   private readonly followTargetPosition = new THREE.Vector3();
   private readonly followDesiredPosition = new THREE.Vector3();
   private readonly followLookTarget = new THREE.Vector3();
+  private readonly followDelta = new THREE.Vector3();
+  private readonly followNudgeOffset = new THREE.Vector3();
+  private readonly followNudgeSpherical = new THREE.Spherical();
   private readonly clock = new THREE.Clock();
-  private pointerStart: { x: number; y: number } | null = null;
 
   // Efectos de "toque": ráfaga de rayos de colores según el estado del fichero
   // y pulso blanco sutil (emissive) sobre el panel tocado.
@@ -217,26 +225,6 @@ export default class ViewImpl implements View {
     });
     this.homeButton.addEventListener('click', () => this.focusHome());
 
-    // Con los controles deshabilitados (seguimiento) OrbitControls no emite 'start',
-    // así que detectamos aquí un arrastre real para salir del modo.
-    const canvas = this.renderer!.domElement;
-    canvas.addEventListener('pointerdown', (event: PointerEvent) => {
-      this.pointerStart = { x: event.clientX, y: event.clientY };
-    });
-    canvas.addEventListener('pointermove', (event: PointerEvent) => {
-      if (!this.followEnabled || !this.pointerStart) {
-        return;
-      }
-      const dx = event.clientX - this.pointerStart.x;
-      const dy = event.clientY - this.pointerStart.y;
-      if (dx * dx + dy * dy > this.followDragThreshold * this.followDragThreshold) {
-        this.stopFollowing();
-      }
-    });
-    canvas.addEventListener('pointerup', () => {
-      this.pointerStart = null;
-    });
-
     window.addEventListener('resize', () => this.onWindowResize(), false);
     document.addEventListener('keydown', async (event) => {
       if (event.code === 'Space') {
@@ -253,6 +241,14 @@ export default class ViewImpl implements View {
       }
       if (event.code === 'KeyF') {
         this.toggleFollow();
+      }
+      if (
+        this.followEnabled &&
+        (event.code === 'ArrowLeft' || event.code === 'ArrowRight' || event.code === 'ArrowUp' || event.code === 'ArrowDown')
+      ) {
+        // Mirar alrededor del astronauta sin salir del modo persecución.
+        event.preventDefault();
+        this.nudgeFollowCamera(event.code);
       }
       let orientationChanged = false;
       if (event.shiftKey) {
@@ -379,10 +375,10 @@ export default class ViewImpl implements View {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
     this.controls.zoomToCursor = true;
-    // Cualquier interacción manual sale del modo seguimiento y
-    // cancela un vuelo de cámara en curso para no pelearse con él.
+    // El usuario toma el control: se cancela el vuelo inicial del seguimiento
+    // (a partir de ahí manda su órbita/zoom) y cualquier tween de cámara en curso.
     this.controls.addEventListener('start', () => {
-      this.stopFollowing();
+      this.followAligning = false;
       this.cancelCameraTween();
     });
   }
@@ -393,7 +389,9 @@ export default class ViewImpl implements View {
 
   private createCamera() {
     const fov = 45;
-    const nearPlane = 1;
+    // near pequeño: permite acercarse al astronauta (minDistance 0.8 en el
+    // seguimiento) sin que el plano cercano lo recorte.
+    const nearPlane = 0.1;
     const farPlane = 1000;
     this.camera = new THREE.PerspectiveCamera(
       fov,
@@ -447,16 +445,27 @@ export default class ViewImpl implements View {
       return;
     }
     this.followEnabled = true;
+    // Vuelo inicial hasta "detrás del astronauta"; en cuanto el usuario orbite o
+    // haga zoom, el anclaje conserva su offset y manda el usuario.
+    this.followAligning = true;
+    this.followAlignElapsed = 0;
     this.cancelCameraTween();
     if (this.controls) {
-      this.controls.enabled = false;
+      // Los controles siguen ACTIVOS durante el seguimiento (órbita y zoom libres).
+      this.controls.enabled = true;
+      this.controls.minDistance = 0.8;
+      this.controls.maxDistance = 20;
     }
   }
 
   private stopFollowing(): void {
     this.followEnabled = false;
+    this.followAligning = false;
     if (this.controls) {
       this.controls.enabled = true;
+      // Fuera del seguimiento no se limitan las distancias de navegación.
+      this.controls.minDistance = 0;
+      this.controls.maxDistance = Infinity;
     }
   }
 
@@ -488,23 +497,67 @@ export default class ViewImpl implements View {
       this.followFacing.negate();
     }
 
-    // Detrás de su espalda y por encima: desired = targetPos − facing·D + (0,H,0).
-    // Se ve su nuca y, más allá, el panel que está modificando.
+    if (this.followAligning) {
+      // Vuelo inicial (solo al entrar): detrás de su espalda y por encima,
+      // desired = targetPos − facing·D + (0,H,0), mirando un poco hacia delante.
+      this.followDesiredPosition
+        .copy(this.followTargetPosition)
+        .addScaledVector(this.followFacing, -this.followDistance);
+      this.followDesiredPosition.y += this.followHeight;
+
+      const alpha = 1 - Math.exp(-this.followLerpSpeed * delta);
+      this.camera.position.lerp(this.followDesiredPosition, alpha);
+
+      this.followLookTarget
+        .copy(this.followTargetPosition)
+        .addScaledVector(this.followFacing, this.followLookAhead);
+      this.followLookTarget.y += this.followLookAheadHeight;
+      this.controls!.target.lerp(this.followLookTarget, alpha);
+
+      this.followAlignElapsed += delta;
+      const aligned = this.camera.position.distanceToSquared(this.followDesiredPosition)
+        <= this.followAlignTolerance * this.followAlignTolerance;
+      if (aligned || this.followAlignElapsed >= this.followAlignTimeout) {
+        this.followAligning = false;
+      }
+      return;
+    }
+
+    // Anclaje en traslación: se desplazan cámara y objetivo EXACTAMENTE el mismo
+    // delta suavizado, así el offset relativo (ángulo + distancia de zoom) que
+    // haya elegido el usuario se conserva siempre, sin snap a "detrás".
     this.followDesiredPosition
       .copy(this.followTargetPosition)
-      .addScaledVector(this.followFacing, -this.followDistance);
-    this.followDesiredPosition.y += this.followHeight;
-
-    const alpha = 1 - Math.exp(-this.followLerpSpeed * delta);
-    this.camera.position.lerp(this.followDesiredPosition, alpha);
-
-    // Mira un poco hacia delante (hacia los ficheros) y hacia arriba: encuadra
-    // al astronauta centrado y el fichero que tiene delante.
-    this.followLookTarget
-      .copy(this.followTargetPosition)
       .addScaledVector(this.followFacing, this.followLookAhead);
-    this.followLookTarget.y += this.followLookAheadHeight;
-    this.controls!.target.lerp(this.followLookTarget, alpha);
+    this.followDesiredPosition.y += this.followLookAheadHeight;
+    const anchorAlpha = 1 - Math.exp(-this.followAnchorLerpSpeed * delta);
+    this.followDelta.subVectors(this.followDesiredPosition, this.controls!.target);
+    this.controls!.target.addScaledVector(this.followDelta, anchorAlpha);
+    this.camera.position.addScaledVector(this.followDelta, anchorAlpha);
+  }
+
+  // Flechas durante el seguimiento: rota en azimut o eleva la cámara alrededor
+  // del astronauta nudando en coordenadas esféricas respecto a controls.target;
+  // controls.update() (con damping) remata el movimiento.
+  private nudgeFollowCamera(code: string): void {
+    if (!this.controls) {
+      return;
+    }
+    this.followAligning = false;
+    const step = 0.08;
+    const offset = this.followNudgeOffset.subVectors(this.camera.position, this.controls.target);
+    const spherical = this.followNudgeSpherical.setFromVector3(offset);
+    if (code === 'ArrowLeft') {
+      spherical.theta -= step;
+    } else if (code === 'ArrowRight') {
+      spherical.theta += step;
+    } else if (code === 'ArrowUp') {
+      spherical.phi = Math.max(0.05, spherical.phi - step);
+    } else if (code === 'ArrowDown') {
+      spherical.phi = Math.min(Math.PI - 0.05, spherical.phi + step);
+    }
+    offset.setFromSpherical(spherical);
+    this.camera.position.copy(this.controls.target).add(offset);
   }
 
   private getTreeBox(): THREE.Box3 | null {
