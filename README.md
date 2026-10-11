@@ -94,7 +94,8 @@ Medidas reales: repos de 506 commits/75 PRs → frío ~6 s, caliente ~15 ms; en 
 | Volver a la vista general | `Esc` |
 | Enfocar una carpeta y su contenido | Doble clic sobre la carpeta |
 | Plegar/desplegar una carpeta | Clic sobre la carpeta |
-| Seguir/dejar de seguir al astronauta activo | `F` (se activa al reproducir; arrastrar sale) |
+| Seguir/dejar de seguir al astronauta activo | `F` (se activa al reproducir; se sale con `F` o al pausar) |
+| Mirar alrededor / acercarse al astronauta (en seguimiento) | Arrastrar con el ratón, rueda de zoom o flechas `←` `→` `↑` `↓` |
 | Mostrar/ocultar la lista de commits | Botón `Toggle Commits` |
 | Cambiar la orientación del árbol | `H` `J` `K` `L` (y con `Shift`) |
 
