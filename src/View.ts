@@ -115,12 +115,12 @@ export default class ViewImpl implements View {
   private readonly rayColorNeutral = 0xffff00;
   private readonly rayColorAdded = 0x00ff55;
   private readonly rayColorRemoved = 0xff2222;
-  private readonly rayRadius = 0.04;
+  private readonly rayRadius = 0.03;
   private readonly rayLife = 0.23;
   private readonly rayRepeatDelayMs = 180;
   private readonly rayOriginOffset = 0.2;
-  // Separación lateral de los cañones respecto al centro del astronauta.
-  private readonly cannonSeparation = 0.4;
+  // Cañones "casi juntos": cada uno a ~0.07 del centro (span total ≈ 0.14).
+  private readonly cannonSeparation = 0.07;
   private readonly rayFadeOpacity = 0.95;
   private readonly rayUp = new THREE.Vector3(0, 1, 0);
   private readonly rayQuaternion = new THREE.Quaternion();
@@ -1023,10 +1023,11 @@ export default class ViewImpl implements View {
     });
   }
 
-  // Rayo de verdad: cilindro fino orientado con cuaternión, no una línea de 1 px.
-  // Nace de un cañón virtual anclado al astronauta: verde a su IZQUIERDA, amarillo
-  // al CENTRO y rojo a su DERECHA. La izquierda se deriva de su mirada:
-  // lateral = normalize(cross(up, facing)) (vista desde atrás, el encuadre por defecto).
+  // Manojo de láseres: cilindros finos, PARALELOS y casi juntos, anclados al
+  // astronauta. Verde a su IZQUIERDA, amarillo al CENTRO y rojo a su DERECHA;
+  // la izquierda se deriva de su mirada con lateral = cross(up, facing) (vista
+  // desde atrás, el encuadre por defecto). Los laterales impactan un poco a los
+  // lados del panel: no se re-alinean hacia el centro, es el efecto buscado.
   private spawnRay(programmer: string, targetPosition: THREE.Vector3, color: number): void {
     const group = this.programmers[programmer].group;
     const origin = group.position;
@@ -1043,17 +1044,27 @@ export default class ViewImpl implements View {
     } else if (color === this.rayColorRemoved) {
       cannonOffset = -this.cannonSeparation;
     }
-    const fromX = origin.x + this.rayLateral.x * cannonOffset;
-    const fromY = origin.y + this.rayOriginOffset;
-    const fromZ = origin.z + this.rayLateral.z * cannonOffset;
-    const dx = targetPosition.x - fromX;
-    const dy = targetPosition.y - fromY;
-    const dz = targetPosition.z - fromZ;
+    // Punto de mira de REFERENCIA: el cañón central (posición + elevación).
+    // De ahí salen la dirección y la longitud COMUNES a los tres cañones, así
+    // los haces quedan estrictamente paralelos.
+    const aimX = origin.x;
+    const aimY = origin.y + this.rayOriginOffset;
+    const aimZ = origin.z;
+    const dx = targetPosition.x - aimX;
+    const dy = targetPosition.y - aimY;
+    const dz = targetPosition.z - aimZ;
     const length = Math.hypot(dx, dy, dz);
     if (length < 1e-4) {
       return;
     }
-    const direction = new THREE.Vector3(dx / length, dy / length, dz / length);
+    const dirX = dx / length;
+    const dirY = dy / length;
+    const dirZ = dz / length;
+    // Cada cañón dispara desde su propio origen lateral con esa misma dirección.
+    const fromX = aimX + this.rayLateral.x * cannonOffset;
+    const fromY = aimY;
+    const fromZ = aimZ + this.rayLateral.z * cannonOffset;
+    const direction = new THREE.Vector3(dirX, dirY, dirZ);
     const geometry = new THREE.CylinderGeometry(this.rayRadius, this.rayRadius, length, 6, 1, true);
     const material = new THREE.MeshBasicMaterial({
       color: color,
@@ -1063,9 +1074,9 @@ export default class ViewImpl implements View {
     });
     const beam = new THREE.Mesh(geometry, material);
     beam.position.set(
-      fromX + direction.x * length / 2,
-      fromY + direction.y * length / 2,
-      fromZ + direction.z * length / 2
+      fromX + dirX * length / 2,
+      fromY + dirY * length / 2,
+      fromZ + dirZ * length / 2
     );
     beam.quaternion.setFromUnitVectors(this.rayUp, direction);
     this.scene.add(beam);
