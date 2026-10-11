@@ -1055,7 +1055,9 @@ export default class ViewImpl implements View {
     const programmerGroup = new THREE.Group();
     const programmerLabel = new Text();
     programmerLabel.text = programmer;
-    programmerLabel.fontSize = 0.1;
+    // Nombre discreto: leemos al astronauta justo desde detrás, así que basta
+    // con un tercio del tamaño original.
+    programmerLabel.fontSize = 0.033;
     programmerLabel.color = 0xff0066;
     programmerLabel.anchorX = 'center';
     programmerLabel.position.y = 0.1;
